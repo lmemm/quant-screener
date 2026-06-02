@@ -1,0 +1,8 @@
+pandas
+numpy
+scipy
+yfinance
+alpaca-py
+ruff
+pytest
+python-dotenv
