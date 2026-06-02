@@ -49,21 +49,21 @@
 ---
 
 ### T-003: Build screener script — run characterization across full universe
-- **Status:** ⬚ Open
+- **Status:** ✅ Done
 - **Priority:** P2
 - **Type:** Feature
 - **Description:** Write `scripts/run_screen.py`. Load all tickers found on the drive, run `characterize()` on each, filter by `MIN_AVG_VOLUME`, and write a ranked CSV to `outputs/screen_results_YYYY-MM-DD.csv`. Log progress as it runs (it will be slow).
 - **Acceptance criteria:**
-  - [ ] Script reads all unique tickers from drive file headers (or a cached list)
-  - [ ] Runs `characterize()` on each ticker with full history
-  - [ ] Filters out tickers below `MIN_AVG_VOLUME`
-  - [ ] Outputs ranked CSV sorted by Hurst exponent descending
-  - [ ] CSV columns: `ticker`, `hurst`, `avg_atr_pct`, `autocorr`, `avg_volume`, `max_drawdown`, `history_days`, `classification` (Trending / Mean-Reverting / Random)
-  - [ ] Logs progress every 100 tickers
-  - [ ] `ruff check .` passes
+  - [x] Script reads all unique tickers from drive file headers (or a cached list)
+  - [x] Runs `characterize()` on each ticker with full history
+  - [x] Filters out tickers below `MIN_AVG_VOLUME`
+  - [x] Outputs ranked CSV sorted by Hurst exponent descending
+  - [x] CSV columns: `ticker`, `hurst`, `avg_atr_pct`, `autocorr`, `avg_volume`, `max_drawdown`, `history_days`, `classification` (Trending / Mean-Reverting / Random)
+  - [x] Logs progress every 100 tickers
+  - [x] `ruff check .` passes
 - **Files likely involved:** `scripts/run_screen.py`, `src/screener/data.py`, `src/screener/characterize.py`
 - **Notes:** This script will take a long time on the full ~8,700 ticker universe. Consider adding a `--tickers` flag to test on a subset.
-- **Completion note:**
+- **Completion note:** Logic lives in a new testable `src/screener/screen.py` (`discover_tickers`, `available_date_range`, `screen_universe`, `results_frame`, `write_results`); `scripts/run_screen.py` is a thin argparse CLI over it with `--tickers`, `--start`, `--end`, `--drive-path`, and `--min-volume` flags. Tickers come from the `ticker` column of the most recent day's file (one day spans the universe); the full date range is inferred from the drive's filenames. Progress logs every 100 tickers. Output sorts by Hurst descending (NaN last) after the `MIN_AVG_VOLUME` filter. Smoke-tested via the CLI against the sample drive. 9 tests in `tests/test_screen.py` (37 total); `ruff` clean, `pytest` 37 passed.
 
 ---
 
@@ -89,6 +89,7 @@
 
 - **T-001** — Data loader (`load_daily_bars`), 2026-06-02. See the ticket above for the completion note.
 - **T-002** — Characterization module (`characterize`), 2026-06-02. See the ticket above for the completion note.
+- **T-003** — Screener pipeline (`screen.py` + `run_screen.py`), 2026-06-02. See the ticket above for the completion note.
 
 ---
 

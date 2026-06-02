@@ -33,3 +33,11 @@
 - Tested the Hurst estimator directly on AR(1) return series (phi=±0.6) and i.i.d. noise for a deterministic trending > random > mean-reverting ordering, sidestepping estimator variance from price→pct_change dilution.
 - `ruff` clean, `pytest` 28 passed.
 - Next: T-003 (screener script) — wires `data.load_daily_bars` + `characterize` across the universe into a ranked CSV.
+
+## [2026-06-02] — T-003 screener pipeline
+
+- Put the screening logic in a new `src/screener/screen.py` (testable) and kept `scripts/run_screen.py` a thin argparse CLI over it — consistent with "scripts are entry points, logic lives in src/". Added `screen.py` to ARCHITECTURE.
+- `discover_tickers` reads the `ticker` column of just the latest day's file rather than scanning ~5 years of archives; `available_date_range` infers the span from filenames.
+- Smoke-tested the CLI end-to-end on the sample drive: runs cleanly, writes `outputs/screen_results_<today>.csv` with 0 rows (sample has 2 days < the 500-day history floor — correct).
+- `ruff` clean, `pytest` 37 passed.
+- Next: T-004 (Alpaca top-up).
