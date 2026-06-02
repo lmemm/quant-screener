@@ -41,3 +41,11 @@
 - Smoke-tested the CLI end-to-end on the sample drive: runs cleanly, writes `outputs/screen_results_<today>.csv` with 0 rows (sample has 2 days < the 500-day history floor — correct).
 - `ruff` clean, `pytest` 37 passed.
 - Next: T-004 (Alpaca top-up).
+
+## [2026-06-02] — T-004 Alpaca top-up
+
+- `topup_ticker` takes an optional injected `client`, so tests exercise the full path (request construction, MultiIndex reduction, date normalization, CSV cache, append) with a stub and no network — satisfying "tests mock the Alpaca client".
+- `load_daily_bars` now appends cached top-up rows within the requested window; the drive wins on any overlapping date (logged in DECISIONS).
+- Confirmed `feed="iex"` is accepted by alpaca-py (coerced to `DataFeed.IEX`).
+- Added `scripts/run_topup.py`. `ruff` clean, `pytest` 41 passed (one harmless third-party `websockets` deprecation warning from importing alpaca-py).
+- All four backlog tickets (T-001–T-004) are now ✅ Done. The pipeline is complete end-to-end: drive → daily bars (+ Alpaca top-up) → characterization → ranked CSV.

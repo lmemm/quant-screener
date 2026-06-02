@@ -68,20 +68,20 @@
 ---
 
 ### T-004: Top-up recent data from Alpaca
-- **Status:** ⬚ Open
+- **Status:** ✅ Done
 - **Priority:** P3
 - **Type:** Feature
 - **Description:** The drive ends at Oct 2025. Write `scripts/run_topup.py` to fetch daily bars from Alpaca (IEX feed) for Oct 2025 → present and cache them in `data/processed/` so `load_daily_bars()` can append them seamlessly.
 - **Acceptance criteria:**
-  - [ ] `topup_ticker(ticker, since) -> pd.DataFrame` in `src/screener/data.py`
-  - [ ] Uses Alpaca `StockHistoricalDataClient` with `feed="iex"`
-  - [ ] Saves result to `data/processed/{ticker}_topup.csv`
-  - [ ] `load_daily_bars()` appends topup data if file exists
-  - [ ] Tests mock the Alpaca client
-  - [ ] `ruff check .` passes, `pytest` passes
+  - [x] `topup_ticker(ticker, since) -> pd.DataFrame` in `src/screener/data.py`
+  - [x] Uses Alpaca `StockHistoricalDataClient` with `feed="iex"`
+  - [x] Saves result to `data/processed/{ticker}_topup.csv`
+  - [x] `load_daily_bars()` appends topup data if file exists
+  - [x] Tests mock the Alpaca client
+  - [x] `ruff check .` passes, `pytest` passes
 - **Files likely involved:** `src/screener/data.py`, `scripts/run_topup.py`, `tests/test_data.py`
 - **Notes:** Alpaca API key comes from `config.ALPACA_API_KEY`. Always use `feed="iex"` — the free tier does not support SIP.
-- **Completion note:**
+- **Completion note:** Added `topup_ticker(ticker, since, client=None)` to `data.py`: builds a `StockBarsRequest` with `feed="iex"` and daily timeframe, reduces Alpaca's `(symbol, timestamp)` MultiIndex to tz-naive dates, and caches OHLCV to `data/processed/{ticker}_topup.csv`. The optional `client` arg makes it injectable so tests use a stub instead of the network. `load_daily_bars` now appends any cached top-up rows within the requested window (drive wins on overlap). Added `scripts/run_topup.py` (`--tickers`, `--since`, default 2025-10-01). 6 tests in `tests/test_data.py` cover save/return, empty response, append, and end-date clipping. `ruff` clean, `pytest` 41 passed.
 
 ---
 
@@ -90,6 +90,7 @@
 - **T-001** — Data loader (`load_daily_bars`), 2026-06-02. See the ticket above for the completion note.
 - **T-002** — Characterization module (`characterize`), 2026-06-02. See the ticket above for the completion note.
 - **T-003** — Screener pipeline (`screen.py` + `run_screen.py`), 2026-06-02. See the ticket above for the completion note.
+- **T-004** — Alpaca top-up (`topup_ticker` + `run_topup.py`), 2026-06-02. See the ticket above for the completion note.
 
 ---
 

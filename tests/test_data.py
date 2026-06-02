@@ -5,12 +5,13 @@ fixture — never the real external drive (see CLAUDE.md).
 """
 
 import datetime as dt
+import types
 
 import pandas as pd
 import pytest
 
 from src.screener import config
-from src.screener.data import load_daily_bars
+from src.screener.data import load_daily_bars, topup_ticker
 
 START = "2025-01-02"
 END = "2025-01-03"
@@ -74,3 +75,95 @@ def test_no_files_in_range_returns_empty(sample_drive):
     """A range with no files at all yields an empty frame, not an error."""
     daily = load_daily_bars("AAPL", "2030-01-01", "2030-01-02", drive_path=sample_drive)
     assert daily.empty
+
+
+# ── T-004: Alpaca top-up ──────────────────────────────────────────────────────
+
+def _fake_alpaca_client(ticker, dates, closes):
+    """A stub StockHistoricalDataClient returning an Alpaca-shaped MultiIndex df."""
+    idx = pd.MultiIndex.from_product(
+        [[ticker], pd.to_datetime(dates, utc=True)],
+        names=["symbol", "timestamp"],
+    )
+    n = len(dates)
+    df = pd.DataFrame(
+        {
+            "open": closes,
+            "high": [c * 1.01 for c in closes],
+            "low": [c * 0.99 for c in closes],
+            "close": closes,
+            "volume": [1_000_000] * n,
+            "trade_count": [100] * n,
+            "vwap": closes,
+        },
+        index=idx,
+    )
+    return types.SimpleNamespace(get_stock_bars=lambda request: types.SimpleNamespace(df=df))
+
+
+def test_topup_ticker_saves_and_returns(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "DATA_PROCESSED", tmp_path)
+    client = _fake_alpaca_client("AAPL", ["2025-10-02", "2025-10-03"], [250.0, 252.0])
+
+    out = topup_ticker("AAPL", "2025-10-01", client=client)
+
+    assert list(out.columns) == ["open", "high", "low", "close", "volume"]
+    assert list(out.index.date) == [dt.date(2025, 10, 2), dt.date(2025, 10, 3)]
+    assert out.loc["2025-10-03", "close"] == pytest.approx(252.0)
+    # Cached file written and reloadable.
+    saved = tmp_path / "AAPL_topup.csv"
+    assert saved.exists()
+    assert pd.read_csv(saved)["close"].tolist() == [250.0, 252.0]
+
+
+def test_topup_empty_response(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "DATA_PROCESSED", tmp_path)
+    client = types.SimpleNamespace(
+        get_stock_bars=lambda request: types.SimpleNamespace(df=pd.DataFrame())
+    )
+    out = topup_ticker("AAPL", "2025-10-01", client=client)
+    assert out.empty
+
+
+def test_load_daily_bars_appends_topup(sample_drive, tmp_path, monkeypatch):
+    """A cached top-up file extends the drive history seamlessly."""
+    monkeypatch.setattr(config, "DATA_PROCESSED", tmp_path)
+    topup = pd.DataFrame(
+        {
+            "date": ["2025-01-06", "2025-01-07"],
+            "open": [240.0, 241.0],
+            "high": [242.0, 243.0],
+            "low": [239.0, 240.0],
+            "close": [241.0, 242.5],
+            "volume": [1_000_000, 1_100_000],
+        }
+    )
+    topup.to_csv(tmp_path / "AAPL_topup.csv", index=False)
+
+    daily = load_daily_bars("AAPL", "2025-01-02", "2025-01-07", drive_path=sample_drive)
+
+    # Two drive days + two top-up days, in order.
+    assert list(daily.index.date) == [
+        dt.date(2025, 1, 2),
+        dt.date(2025, 1, 3),
+        dt.date(2025, 1, 6),
+        dt.date(2025, 1, 7),
+    ]
+    assert daily.loc["2025-01-07", "close"] == pytest.approx(242.5)
+    # Drive values untouched by the append.
+    assert daily.loc["2025-01-02", "volume"] == 5181
+
+
+def test_load_daily_bars_topup_respects_end_date(sample_drive, tmp_path, monkeypatch):
+    """Top-up rows beyond the requested end date are not appended."""
+    monkeypatch.setattr(config, "DATA_PROCESSED", tmp_path)
+    pd.DataFrame(
+        {
+            "date": ["2025-01-06"],
+            "open": [240.0], "high": [242.0], "low": [239.0],
+            "close": [241.0], "volume": [1_000_000],
+        }
+    ).to_csv(tmp_path / "AAPL_topup.csv", index=False)
+
+    daily = load_daily_bars("AAPL", "2025-01-02", "2025-01-03", drive_path=sample_drive)
+    assert list(daily.index.date) == [dt.date(2025, 1, 2), dt.date(2025, 1, 3)]

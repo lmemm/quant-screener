@@ -113,6 +113,12 @@ def load_daily_bars(
         if rows is not None and not rows.empty:
             frames.append(rows)
 
+    daily = _resample_drive_bars(frames)
+    return _append_topup(daily, ticker, start_date, end_date)
+
+
+def _resample_drive_bars(frames: list[pd.DataFrame]) -> pd.DataFrame:
+    """De-duplicate, drop nulls, and resample raw minute bars to daily OHLCV."""
     if not frames:
         return _empty_daily()
 
@@ -132,3 +138,96 @@ def load_daily_bars(
     daily.index.name = "date"
     daily["volume"] = daily["volume"].astype("int64")
     return daily[_OHLCV]
+
+
+def _topup_path(ticker: str) -> Path:
+    """Location of a ticker's cached Alpaca top-up file."""
+    return config.DATA_PROCESSED / f"{ticker}_topup.csv"
+
+
+def _normalize_to_dates(index: pd.Index) -> pd.DatetimeIndex:
+    """Coerce a (possibly tz-aware) timestamp index to tz-naive dates."""
+    idx = pd.DatetimeIndex(index)
+    if idx.tz is not None:
+        idx = idx.tz_convert("UTC").tz_localize(None)
+    return idx.normalize()
+
+
+def _append_topup(
+    daily: pd.DataFrame,
+    ticker: str,
+    start_date: dt.date,
+    end_date: dt.date,
+) -> pd.DataFrame:
+    """Append cached Alpaca top-up bars (if any) to drive-sourced daily bars.
+
+    Top-up data extends the drive past its last date. On any overlapping date
+    the drive value wins (it is the authoritative historical source).
+    """
+    path = _topup_path(ticker)
+    if not path.exists():
+        return daily
+
+    topup = pd.read_csv(path, index_col="date", parse_dates=["date"])
+    topup.index = _normalize_to_dates(topup.index)
+    topup.index.name = "date"
+    mask = (topup.index >= pd.Timestamp(start_date)) & (
+        topup.index <= pd.Timestamp(end_date)
+    )
+    topup = topup.loc[mask, _OHLCV]
+    if topup.empty:
+        return daily
+
+    combined = pd.concat([daily, topup])
+    combined = combined[~combined.index.duplicated(keep="first")].sort_index()
+    combined["volume"] = combined["volume"].astype("int64")
+    return combined[_OHLCV]
+
+
+def topup_ticker(
+    ticker: str,
+    since: str | dt.date | dt.datetime | pd.Timestamp,
+    client=None,
+) -> pd.DataFrame:
+    """Fetch daily bars from Alpaca (IEX feed) since ``since`` and cache them.
+
+    The result is written to ``data/processed/{ticker}_topup.csv`` so that
+    ``load_daily_bars`` can append it seamlessly. Pass ``client`` to inject a
+    pre-built (or mocked) ``StockHistoricalDataClient``.
+
+    Returns the fetched daily OHLCV frame (empty if Alpaca returned nothing).
+    """
+    from alpaca.data.historical import StockHistoricalDataClient
+    from alpaca.data.requests import StockBarsRequest
+    from alpaca.data.timeframe import TimeFrame
+
+    if client is None:
+        client = StockHistoricalDataClient(
+            config.ALPACA_API_KEY, config.ALPACA_API_SECRET
+        )
+
+    request = StockBarsRequest(
+        symbol_or_symbols=ticker,
+        timeframe=TimeFrame.Day,
+        start=pd.Timestamp(since),
+        feed="iex",  # free tier does not support SIP
+    )
+    raw = client.get_stock_bars(request).df
+
+    if raw is None or raw.empty:
+        return _empty_daily()
+
+    # Alpaca returns a (symbol, timestamp) MultiIndex; reduce to this ticker.
+    if isinstance(raw.index, pd.MultiIndex):
+        raw = raw.xs(ticker, level=0)
+
+    daily = raw[_OHLCV].copy()
+    daily.index = _normalize_to_dates(raw.index)
+    daily.index.name = "date"
+    daily["volume"] = daily["volume"].astype("int64")
+    daily = daily[_OHLCV]
+
+    config.DATA_PROCESSED.mkdir(parents=True, exist_ok=True)
+    daily.to_csv(_topup_path(ticker))
+    logger.info("Wrote %d top-up bars for %s to %s", len(daily), ticker, _topup_path(ticker))
+    return daily

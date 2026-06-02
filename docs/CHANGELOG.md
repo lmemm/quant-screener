@@ -3,6 +3,7 @@
 ## [2026-06-02]
 
 ### Added
+- **T-004:** `topup_ticker(ticker, since, client=None)` in `src/screener/data.py` (Alpaca IEX daily bars → `data/processed/{ticker}_topup.csv`), top-up append wired into `load_daily_bars`, and the `scripts/run_topup.py` CLI (`--tickers/--since`). Tests mock the Alpaca client.
 - **T-003:** `src/screener/screen.py` (`discover_tickers`, `available_date_range`, `screen_universe`, `results_frame`, `write_results`) and the `scripts/run_screen.py` CLI (`--tickers/--start/--end/--drive-path/--min-volume`). Ranks candidates by Hurst descending after the `MIN_AVG_VOLUME` filter and writes `outputs/screen_results_YYYY-MM-DD.csv`.
 - `tests/test_screen.py` — 9 tests for ticker discovery, date-range inference, volume filter + ranking, end-to-end screening against the sample drive, and CSV roundtrip.
 - **T-002:** `src/screener/characterize.py` with `characterize(df)` and standalone metric helpers (`hurst_exponent`, `avg_atr_pct`, `lag1_autocorr`, `max_drawdown`, `classify_hurst`). Hurst uses rescaled-range analysis on daily returns; ATR is 14-period mean True Range as % of close; max drawdown is a negative fraction. Returns `None` below `config.MIN_HISTORY_DAYS`.
