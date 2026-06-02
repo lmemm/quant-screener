@@ -28,23 +28,23 @@
 ---
 
 ### T-002: Build characterization module — Hurst, ATR, autocorrelation, volume
-- **Status:** ⬚ Open
+- **Status:** ✅ Done
 - **Priority:** P1
 - **Type:** Feature
 - **Description:** Write `src/screener/characterize.py`. Given a daily OHLCV DataFrame, compute the stats used to classify a stock's behavior. Output a dict of metrics for that ticker.
 - **Acceptance criteria:**
-  - [ ] `characterize(df: pd.DataFrame) -> dict` in `src/screener/characterize.py`
-  - [ ] Computes Hurst exponent (use rescaled range method)
-  - [ ] Computes average ATR as % of close price (14-period)
-  - [ ] Computes lag-1 autocorrelation of daily returns
-  - [ ] Computes average daily volume
-  - [ ] Computes max drawdown
-  - [ ] Returns `None` (or raises) if DataFrame has fewer than `MIN_HISTORY_DAYS` rows
-  - [ ] Tests cover normal input and short input
-  - [ ] `ruff check .` passes, `pytest` passes
+  - [x] `characterize(df: pd.DataFrame) -> dict` in `src/screener/characterize.py`
+  - [x] Computes Hurst exponent (use rescaled range method)
+  - [x] Computes average ATR as % of close price (14-period)
+  - [x] Computes lag-1 autocorrelation of daily returns
+  - [x] Computes average daily volume
+  - [x] Computes max drawdown
+  - [x] Returns `None` (or raises) if DataFrame has fewer than `MIN_HISTORY_DAYS` rows
+  - [x] Tests cover normal input and short input
+  - [x] `ruff check .` passes, `pytest` passes
 - **Files likely involved:** `src/screener/characterize.py`, `tests/test_characterize.py`
 - **Notes:** Hurst exponent: H > 0.55 = trending, H < 0.45 = mean-reverting, 0.45–0.55 = random walk. Thresholds live in `config.py`.
-- **Completion note:**
+- **Completion note:** Implemented `characterize()` plus standalone, individually-tested metric helpers (`hurst_exponent`, `avg_atr_pct`, `lag1_autocorr`, `max_drawdown`, `classify_hurst`). The Hurst exponent uses rescaled-range (R/S) analysis applied to *daily returns* — so a random-walk price gives H≈0.5, trending returns >0.5, mean-reverting <0.5 — with log-spaced window sizes and a log-log slope fit. ATR is the 14-period mean True Range expressed as a % of close; max drawdown is returned as a negative fraction. `characterize()` returns `None` below `config.MIN_HISTORY_DAYS`. Classification thresholds read from `config`. 14 tests in `tests/test_characterize.py` (28 total); `ruff` clean, `pytest` 28 passed.
 
 ---
 
@@ -88,6 +88,7 @@
 ## Completed Tickets
 
 - **T-001** — Data loader (`load_daily_bars`), 2026-06-02. See the ticket above for the completion note.
+- **T-002** — Characterization module (`characterize`), 2026-06-02. See the ticket above for the completion note.
 
 ---
 

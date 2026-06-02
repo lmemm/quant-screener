@@ -25,3 +25,11 @@
 - `ruff` clean, `pytest` 13 passed. Verified output against the `expected_daily` fixture.
 - Note: `git push` to the branch returned HTTP 403 (permission denied) this session — commits are local, pending a push-access fix.
 - Next: T-002 (characterization) — `data.py` now feeds it daily OHLCV.
+
+## [2026-06-02] — T-002 characterization
+
+- Push access restored mid-session; pushed the hook + T-001, then continued straight into T-002/T-003/T-004.
+- Built `characterize()` and standalone metric helpers so each is unit-testable. Key call: the Hurst exponent (R/S method) is applied to **daily returns**, not the price level — that's what makes random-walk prices land at H≈0.5 and gives the trending(>0.5)/mean-reverting(<0.5) split the project relies on.
+- Tested the Hurst estimator directly on AR(1) return series (phi=±0.6) and i.i.d. noise for a deterministic trending > random > mean-reverting ordering, sidestepping estimator variance from price→pct_change dilution.
+- `ruff` clean, `pytest` 28 passed.
+- Next: T-003 (screener script) — wires `data.load_daily_bars` + `characterize` across the universe into a ranked CSV.
