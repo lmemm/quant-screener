@@ -16,3 +16,12 @@
 - Fixed a path bug in `config.ROOT` (`parents[3]` → `parents[2]`).
 - Created local `.env` (gitignored) pointing at the mounted SSD. Confirmed the 23 GB stays on the SSD — no move needed.
 - Next: pick up T-001 (data loader) — fixtures and expected values are ready in `tests/conftest.py`.
+
+## [2026-06-02] — T-001 data loader
+
+- First web session found the deps weren't installed and that the pre-provisioned `pytest`/`ruff` are isolated uv tools that can't see project libraries (bare `pytest` → `ModuleNotFoundError: pandas`). Added a SessionStart hook to `pip install -r requirements.txt` into the system interpreter; standardized on `python -m pytest` / `python -m ruff`.
+- Implemented `load_daily_bars()` in `src/screener/data.py`: per-day file reads, dedup on `(ticker, window_start)`, dropna on OHLCV, then `resample("1D")` for first-open/max-high/min-low/last-close/sum-volume. Optional `drive_path` arg keeps tests off the real drive.
+- Moved the 15 Dec-2024 corrupt dates into `config.CORRUPT_DATES`; loader warns and skips them. Missing files skipped quietly (debug) — decision logged.
+- `ruff` clean, `pytest` 13 passed. Verified output against the `expected_daily` fixture.
+- Note: `git push` to the branch returned HTTP 403 (permission denied) this session — commits are local, pending a push-access fix.
+- Next: T-002 (characterization) — `data.py` now feeds it daily OHLCV.

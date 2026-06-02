@@ -1,5 +1,6 @@
 """Central config — all paths and thresholds live here."""
 
+import datetime as dt
 import os
 from pathlib import Path
 
@@ -15,6 +16,14 @@ OUTPUTS = ROOT / "outputs"
 
 # External drive — override via .env
 DRIVE_PATH = Path(os.getenv("DATA_DRIVE_PATH", "/Volumes/Extreme Pro/stock data from Emery"))
+
+# ── Known-bad data ─────────────────────────────────────────────────────────
+# 15 corrupt days in December 2024 on the drive — skipped with a warning by the
+# loader (see BACKLOG.md T-001 notes).
+CORRUPT_DATES = frozenset(
+    dt.date(2024, 12, day)
+    for day in (10, 11, 12, 13, 16, 17, 18, 19, 20, 23, 24, 26, 27, 30, 31)
+)
 
 # ── Alpaca ─────────────────────────────────────────────────────────────────
 ALPACA_API_KEY = os.getenv("ALPACA_API_KEY", "")

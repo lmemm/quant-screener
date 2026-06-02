@@ -7,23 +7,23 @@
 ## Active Tickets
 
 ### T-001: Build data loader — read and resample 1-min bars from external drive
-- **Status:** ⬚ Open
+- **Status:** ✅ Done
 - **Priority:** P1
 - **Type:** Feature
 - **Description:** Write `src/screener/data.py`. Given a ticker and date range, locate the relevant `.csv.gz` files on the external drive, load them, filter to that ticker, and resample 1-minute bars to daily OHLCV (first open, last close, max high, min low, sum volume). Return a DataFrame with a DatetimeIndex. Handle missing files, corrupt files, and the known December 2024 corrupt dates gracefully.
 - **Acceptance criteria:**
-  - [ ] `load_daily_bars(ticker, start, end) -> pd.DataFrame` in `src/screener/data.py`
-  - [ ] Reads from `DRIVE_PATH / YYYY / MM / YYYY-MM-DD.csv.gz`
-  - [ ] Resamples 1-min bars to daily OHLCV correctly
-  - [ ] Skips corrupt/missing files with a warning, does not crash
-  - [ ] De-duplicates bars before resampling (per data summary §5e)
-  - [ ] Drops nulls before resampling (per data summary §5b)
-  - [ ] Returns empty DataFrame if no data found
-  - [ ] Tests use a small sample CSV (not the real drive)
-  - [ ] `ruff check .` passes, `pytest` passes
+  - [x] `load_daily_bars(ticker, start, end) -> pd.DataFrame` in `src/screener/data.py`
+  - [x] Reads from `DRIVE_PATH / YYYY / MM / YYYY-MM-DD.csv.gz`
+  - [x] Resamples 1-min bars to daily OHLCV correctly
+  - [x] Skips corrupt/missing files with a warning, does not crash
+  - [x] De-duplicates bars before resampling (per data summary §5e)
+  - [x] Drops nulls before resampling (per data summary §5b)
+  - [x] Returns empty DataFrame if no data found
+  - [x] Tests use a small sample CSV (not the real drive)
+  - [x] `ruff check .` passes, `pytest` passes
 - **Files likely involved:** `src/screener/data.py`, `tests/test_data.py`
 - **Notes:** Drive path comes from `config.DRIVE_PATH`. The 15 corrupt December 2024 dates are: Dec 10–13, 16–20, 23–24, 26–27, 30–31. Skip them with a warning.
-- **Completion note:**
+- **Completion note:** Implemented `load_daily_bars()` in `src/screener/data.py` with an optional `drive_path` arg so tests point at the sample drive. Per-day files are read, filtered to the ticker, de-duplicated on `(ticker, window_start)`, null-OHLCV rows dropped, then resampled to daily OHLCV via pandas `resample("1D")`. The 15 corrupt Dec-2024 dates were moved into `config.CORRUPT_DATES` and are skipped with a warning before any file access; missing files are skipped quietly (debug) to avoid thousands of weekend/holiday warnings over multi-year ranges — see DECISIONS.md. 7 tests in `tests/test_data.py` (13 total); `ruff` clean, `pytest` 13 passed.
 
 ---
 
@@ -87,7 +87,7 @@
 
 ## Completed Tickets
 
-_(none yet)_
+- **T-001** — Data loader (`load_daily_bars`), 2026-06-02. See the ticket above for the completion note.
 
 ---
 
