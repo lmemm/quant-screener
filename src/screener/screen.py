@@ -16,7 +16,6 @@ import pandas as pd
 
 from . import config
 from .characterize import characterize
-from .data import load_daily_bars
 
 logger = logging.getLogger(__name__)
 
@@ -81,13 +80,20 @@ def screen_universe(
     start: str | dt.date | None = None,
     end: str | dt.date | None = None,
     min_avg_volume: float = config.MIN_AVG_VOLUME,
+    cache_dir: Path | None = None,
 ) -> pd.DataFrame:
     """Characterize every ticker and return a ranked, volume-filtered frame.
 
-    Tickers with fewer than ``config.MIN_HISTORY_DAYS`` of history (where
-    ``characterize`` returns ``None``) are skipped.
+    Reads from the daily cache when one is built (see ``cache.build_daily_cache``)
+    and falls back to scanning the drive otherwise — the result is identical
+    either way, the cache is just far faster. Tickers with fewer than
+    ``config.MIN_HISTORY_DAYS`` of history (where ``characterize`` returns
+    ``None``) are skipped.
     """
+    from . import cache
+
     drive_path = config.DRIVE_PATH if drive_path is None else Path(drive_path)
+    using_cache = cache.cache_available(cache_dir)
 
     if start is None or end is None:
         span = available_date_range(drive_path)
@@ -98,14 +104,17 @@ def screen_universe(
         end = end or span[1]
 
     if tickers is None:
-        tickers = discover_tickers(drive_path)
-    logger.info("Screening %d tickers from %s to %s", len(tickers), start, end)
+        tickers = cache.universe_tickers(drive_path, cache_dir)
+    logger.info(
+        "Screening %d tickers from %s to %s (source: %s)",
+        len(tickers), start, end, "cache" if using_cache else "drive",
+    )
 
     records: list[dict] = []
     for i, ticker in enumerate(tickers, start=1):
         if i % _PROGRESS_EVERY == 0:
             logger.info("  ...%d/%d tickers processed", i, len(tickers))
-        df = load_daily_bars(ticker, start, end, drive_path=drive_path)
+        df = cache.load_daily(ticker, start, end, drive_path=drive_path, cache_dir=cache_dir)
         metrics = characterize(df)
         if metrics is None:
             continue

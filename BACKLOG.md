@@ -122,6 +122,25 @@
 
 ---
 
+### T-007: Single-pass daily cache (universe screening is infeasible without it)
+- **Status:** ✅ Done
+- **Priority:** P1
+- **Type:** Feature / Performance
+- **Description:** `load_daily_bars` reads data **per ticker** by scanning every daily file and keeping one symbol's rows. The archive is partitioned **by day** (each file = all ~12k tickers for one day), so a full-universe screen re-reads the entire 23 GB archive once per ticker. Benchmarked on the real drive at **~17 min/ticker** → the full ~12k-name universe is infeasible (thousands of hours). Build a one-pass cache: read the archive **once**, resample every ticker to daily in that pass, and write a compact per-ticker daily store so screen/validate read in seconds.
+- **Acceptance criteria:**
+  - [x] `build_daily_cache(...)` in `src/screener/cache.py` — one pass over the archive → `data/processed/daily_cache/{TICKER}.parquet`
+  - [x] `load_cached_daily(ticker, start, end)` returns the **identical** frame as `load_daily_bars` (asserted bit-for-bit by tests, incl. on real data)
+  - [x] `load_daily`/`universe_tickers` dispatchers: use cache when built, fall back to the drive otherwise
+  - [x] `screen_universe`/`validate_universe` read via the cache transparently
+  - [x] `scripts/build_cache.py` CLI (`--start/--end/--drive-path/--cache-dir`)
+  - [x] Tests incl. the equality (trust-anchor) test on the sample drive
+  - [x] `ruff check .` passes, `pytest` passes
+- **Files likely involved:** `src/screener/cache.py`, `scripts/build_cache.py`, `tests/test_cache.py`, `src/screener/screen.py`, `src/screener/validate.py`
+- **Notes:** Cache lives under gitignored `data/processed/`. Derived artifact — rebuild when the drive gains new days; Alpaca top-ups are still appended at read time so they need no rebuild. The per-file aggregation is `groupby([ticker, day-floor]).agg(...)`, **not** `groupby(ticker).resample("1D")` — the latter materializes an empty date range per ticker and was ~8× slower in benchmarking.
+- **Completion note:** Added `src/screener/cache.py`. `build_daily_cache` reads each day file once, dedups/dropna/aggregates to one daily bar per `(ticker, day)`, collapses any cross-file day-boundary spill, and writes per-ticker parquet. `load_cached_daily` mirrors `load_daily_bars` exactly (date filter + top-up append). `load_daily`/`universe_tickers` pick cache-or-drive; `screen_universe`/`validate_universe` use them (lazy import to avoid a cycle). Verified on the **real drive** (AAPL/MSFT/NVDA, Aug–Sep 2025): output bit-for-bit `IDENTICAL` to the live loader. Benchmark caught a slow first implementation (per-file `groupby+resample`, ~3.7 hr full build) and the `groupby([ticker, day])` rewrite brought it to **~28 min full build, then sub-second reads** (vs ~3,400 hr for a per-ticker full-universe screen). 14 tests in `tests/test_cache.py` (incl. the equality trust anchor); `ruff` clean, `pytest` 66 passed.
+
+---
+
 ## Completed Tickets
 
 - **T-001** — Data loader (`load_daily_bars`), 2026-06-02. See the ticket above for the completion note.
@@ -130,6 +149,7 @@
 - **T-004** — Alpaca top-up (`topup_ticker` + `run_topup.py`), 2026-06-02. See the ticket above for the completion note.
 - **T-005** — Fix entry-point script imports (`No module named 'src'`), 2026-06-05. See the ticket above for the completion note.
 - **T-006** — Walk-forward validation harness (`validate.py` + `run_validate.py`), 2026-06-05. See the ticket above for the completion note.
+- **T-007** — Single-pass daily cache (`cache.py` + `build_cache.py`), 2026-06-05. See the ticket above for the completion note.
 
 ---
 

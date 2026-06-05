@@ -1,5 +1,10 @@
 # Decisions
 
+## [2026-06-05] — Single-pass daily cache for universe-scale reads
+
+- **Decision:** Add a one-time `build_daily_cache` that reads the by-day archive once and writes a per-ticker daily parquet store under `data/processed/daily_cache/`. `screen`/`validate` read it via `load_daily`/`universe_tickers`, falling back to the live drive scan when no cache exists. The per-file aggregation is `groupby([ticker, day-floor]).agg(...)`, not `groupby(ticker).resample("1D")`.
+- **Reason:** The archive is partitioned by day but the screener queries by ticker, so `load_daily_bars` re-reads the whole 23 GB archive once per ticker — benchmarked at ~17 min/ticker, making the ~12k-name universe infeasible (thousands of hours). Reading once and fanning out to all tickers turns that into a single ~28-min pass; subsequent screens read the cache in seconds. The output is provably identical to the loader (an `assert_frame_equal` test is the trust anchor, verified on real data), so there's no quality trade-off — only memory during the build and disk for the cache (a few hundred MB, gitignored). The cache is a *derived* artifact: rebuild when the drive gains new days; top-ups are appended at read time so they don't require a rebuild. `groupby+resample` was chosen first and benchmarked ~8× slower (it materializes an empty date range per ticker per file); the two-key groupby is the same result, far cheaper.
+
 ## [2026-06-05] — Walk-forward validation: simple, fixed-parameter, long-only, cost-charged
 
 - **Decision:** The WFV harness validates each candidate with a single fixed-parameter, long-only strategy matched to its screener classification (Donchian breakout for Trending, z-score reversion for Mean-Reverting; Random/Unknown skipped). No per-fold parameter optimization. Every change in exposure is charged `WFV_COST_PER_TRADE` (default 0.1%), and signals act on the next bar (no lookahead). A fold passes only if profitable **and** it has ≥ `WFV_MIN_TRADES_PER_FOLD` trades; a candidate passes with ≥ `WFV_MIN_FOLDS_PASSING` passing folds.

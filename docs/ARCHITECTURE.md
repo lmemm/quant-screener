@@ -9,11 +9,12 @@ statistical behavior, and outputs a ranked shortlist for manual review.
 ## Data Flow
 
 ```
-External Drive (1-min bars, ~8,700 tickers, 2020–2025)
+External Drive (1-min bars, ~12,000 tickers, 2020–2025)
     │
-    ▼
-data.py — load_daily_bars()
-    │  reads .csv.gz files, resamples 1-min → daily OHLCV
+    ├─ data.py — load_daily_bars()  (per-ticker scan; correct but slow at scale)
+    │
+    └─ cache.py — build_daily_cache()  (ONE pass → data/processed/daily_cache/)
+    │     screen/validate read the cache in seconds; identical daily bars
     │
     ▼
 characterize.py — characterize()
@@ -49,6 +50,7 @@ Manual review + paper trading → promote to swing-trader TICKERS
 | `characterize.py` | Compute Hurst, ATR, autocorrelation, volume, drawdown |
 | `screen.py` | Discover the universe, characterize every ticker, rank + filter, write CSV |
 | `validate.py` | Walk-forward validation: class-matched long-only strategies (breakout / z-score reversion), rolling-fold backtest with trading costs, pass/fail per candidate |
+| `cache.py` | Single-pass daily cache: read the by-day archive once, write a per-ticker daily store to `data/processed/daily_cache/`; `load_daily`/`universe_tickers` transparently use it (drive fallback). Output is identical to `load_daily_bars` (asserted by tests) |
 
 ## Scripts
 
@@ -57,6 +59,7 @@ Manual review + paper trading → promote to swing-trader TICKERS
 | `run_screen.py` | Run full characterization pass, output ranked CSV |
 | `run_topup.py` | Fetch recent bars from Alpaca to extend drive data |
 | `run_validate.py` | Walk-forward-validate candidates, output pass/fail CSV |
+| `build_cache.py` | Build the single-pass daily cache from the drive (one-time, ~30 min) |
 
 ---
 

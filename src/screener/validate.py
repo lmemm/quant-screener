@@ -279,10 +279,12 @@ def validate_universe(
     start=None,
     end=None,
     min_avg_volume: float = config.MIN_AVG_VOLUME,
+    cache_dir=None,
 ) -> pd.DataFrame:
     """Characterize, then walk-forward-validate every ticker on the drive.
 
-    For each ticker: load daily bars, characterize it (to get its volume and
+    Reads from the daily cache when built (else scans the drive). For each
+    ticker: load daily bars, characterize it (to get its volume and
     classification), drop it if below ``min_avg_volume`` or too short to
     characterize, then validate it with the class-matched strategy. ``Random``
     names (no matched strategy) are skipped. Returns a frame with the passing
@@ -292,11 +294,12 @@ def validate_universe(
     # dependency on drive I/O.
     from pathlib import Path
 
+    from . import cache
     from .characterize import characterize
-    from .data import load_daily_bars
-    from .screen import available_date_range, discover_tickers
+    from .screen import available_date_range
 
     drive_path = config.DRIVE_PATH if drive_path is None else Path(drive_path)
+    using_cache = cache.cache_available(cache_dir)
 
     if start is None or end is None:
         span = available_date_range(drive_path)
@@ -307,12 +310,15 @@ def validate_universe(
         end = end or span[1]
 
     if tickers is None:
-        tickers = discover_tickers(drive_path)
-    logger.info("Validating %d tickers from %s to %s", len(tickers), start, end)
+        tickers = cache.universe_tickers(drive_path, cache_dir)
+    logger.info(
+        "Validating %d tickers from %s to %s (source: %s)",
+        len(tickers), start, end, "cache" if using_cache else "drive",
+    )
 
     rows: list[dict] = []
     for ticker in tickers:
-        df = load_daily_bars(ticker, start, end, drive_path=drive_path)
+        df = cache.load_daily(ticker, start, end, drive_path=drive_path, cache_dir=cache_dir)
         metrics = characterize(df)
         if metrics is None or metrics["avg_volume"] < min_avg_volume:
             continue
