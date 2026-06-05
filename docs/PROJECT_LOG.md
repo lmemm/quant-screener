@@ -49,3 +49,9 @@
 - Confirmed `feed="iex"` is accepted by alpaca-py (coerced to `DataFeed.IEX`).
 - Added `scripts/run_topup.py`. `ruff` clean, `pytest` 41 passed (one harmless third-party `websockets` deprecation warning from importing alpaca-py).
 - All four backlog tickets (T-001–T-004) are now ✅ Done. The pipeline is complete end-to-end: drive → daily bars (+ Alpaca top-up) → characterization → ranked CSV.
+
+## [2026-06-05] — T-005 fix entry-point script imports
+
+- Post-merge status check after PR #3: pulled `main`, ran `ruff` (clean) and `pytest` (41 passed), then smoke-tested the documented entry points. Both `python scripts/run_screen.py` and `python scripts/run_topup.py` crashed immediately with `ModuleNotFoundError: No module named 'src'` — running a script directly puts `scripts/` on `sys.path[0]`, not the repo root, so the top-level `from src.screener...` import can't resolve. Tests passed only because pytest injects the repo root; there's no `pyproject.toml`/`pytest.ini`/root `conftest.py`.
+- Fix: `sys.path.insert(0, <repo root>)` bootstrap in each script + moved the `src.screener` import into `main()` so it runs after the bootstrap (keeps `ruff` clean without a `# noqa`). Verified `run_screen.py` runs end-to-end on the sample drive. `ruff` clean, `pytest` 41 passed.
+- Next: walk-forward validation (the one piece of the stated project purpose with config params but no module/ticket) — needs a strategy spec before implementing.

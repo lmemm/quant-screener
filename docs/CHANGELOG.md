@@ -1,5 +1,10 @@
 # Changelog
 
+## [2026-06-05]
+
+### Fixed
+- **T-005:** Entry-point scripts crashed with `ModuleNotFoundError: No module named 'src'` when run directly (`python scripts/run_screen.py`, `python scripts/run_topup.py`) because `scripts/`, not the repo root, lands on `sys.path[0]`. Added a `sys.path` bootstrap to each script (and moved the `src.screener` import into `main()`) so the package resolves regardless of cwd; lint stays clean with no suppressions. Tests had hidden this since pytest injects the repo root onto the path.
+
 ## [2026-06-02]
 
 ### Added

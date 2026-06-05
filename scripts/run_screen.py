@@ -14,8 +14,12 @@ from __future__ import annotations
 
 import argparse
 import logging
+import sys
+from pathlib import Path
 
-from src.screener.screen import screen_universe, write_results
+# Allow running directly (``python scripts/run_screen.py``): put the project
+# root on the path so the ``src`` package resolves regardless of cwd.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 
 def _parse_args() -> argparse.Namespace:
@@ -45,6 +49,8 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(message)s",
     )
     args = _parse_args()
+
+    from src.screener.screen import screen_universe, write_results
 
     tickers = args.tickers.split(",") if args.tickers else None
     kwargs = dict(
