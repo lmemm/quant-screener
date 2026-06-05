@@ -1,5 +1,10 @@
 # Decisions
 
+## [2026-06-05] — Walk-forward validation: simple, fixed-parameter, long-only, cost-charged
+
+- **Decision:** The WFV harness validates each candidate with a single fixed-parameter, long-only strategy matched to its screener classification (Donchian breakout for Trending, z-score reversion for Mean-Reverting; Random/Unknown skipped). No per-fold parameter optimization. Every change in exposure is charged `WFV_COST_PER_TRADE` (default 0.1%), and signals act on the next bar (no lookahead). A fold passes only if profitable **and** it has ≥ `WFV_MIN_TRADES_PER_FOLD` trades; a candidate passes with ≥ `WFV_MIN_FOLDS_PASSING` passing folds.
+- **Reason:** The point of validation is to *not fool ourselves*, so the design favors honesty over flattering results. Fixed params mean nothing is fit in-sample, so there is nothing to overfit — the folds are pure out-of-sample segments. Costs are charged up front because omitting them is the classic way a losing strategy looks like a winner. Long-only keeps it understandable for a beginner and avoids borrow/short mechanics. The per-fold trade gate intentionally fails buy-and-hold (one trade, then coast): WFV is meant to validate a *trading* rule repeatedly, not a single lucky entry. A real, faithful backtest of a live swing-trading strategy can replace these placeholder rules later — the engine takes any `strategy(df) -> positions` function.
+
 ## [2026-06-02] — Use IEX feed for Alpaca stock data
 
 - **Decision:** Always pass `feed="iex"` to Alpaca `StockBarsRequest`.

@@ -101,6 +101,27 @@
 
 ---
 
+### T-006: Walk-forward validation harness
+- **Status:** ✅ Done
+- **Priority:** P2
+- **Type:** Feature
+- **Description:** Build the walk-forward validation step the project purpose calls for. For each screener candidate, run a simple, class-matched, long-only strategy across rolling out-of-sample folds, charge realistic trading costs, and report whether it holds up. The reserved `WFV_*` config params (folds, min-folds-passing, min-trades-per-fold) define the pass rule. This is a research *filter*, not a profit engine — expect most candidates to fail.
+- **Acceptance criteria:**
+  - [x] `walk_forward(df, strategy, ...) -> WFVResult` engine in `src/screener/validate.py`
+  - [x] Splits history into `config.WFV_FOLDS` contiguous out-of-sample folds
+  - [x] Charges `config.WFV_COST_PER_TRADE` on every change in exposure
+  - [x] No lookahead — signals act on the next bar (positions shifted)
+  - [x] Class-matched strategies: breakout (Trending), z-score reversion (Mean-Reverting); `Random`/`Unknown` skipped
+  - [x] Pass rule: ≥ `WFV_MIN_FOLDS_PASSING` folds profitable with ≥ `WFV_MIN_TRADES_PER_FOLD` trades each
+  - [x] `validate_universe(...)` + `write_validation(...)` pipeline and `scripts/run_validate.py` CLI (`--tickers/--start/--end/--drive-path/--min-volume`)
+  - [x] Tests on synthetic series (sample drive is only 2 days)
+  - [x] `ruff check .` passes, `pytest` passes
+- **Files likely involved:** `src/screener/validate.py`, `scripts/run_validate.py`, `tests/test_validate.py`, `src/screener/config.py`
+- **Notes:** Strategy params live in `config.py`. Fixed params, no per-fold optimization — with nothing fit in-sample there's nothing to overfit. Long-only by design (beginner-appropriate, no shorting). Real validation needs the mounted drive; the sample can only exercise the logic.
+- **Completion note:** Added `src/screener/validate.py` — a pluggable `walk_forward` engine plus two deliberately simple long-only strategies (`breakout_strategy` Donchian breakout for trending names, `mean_reversion_strategy` z-score reversion for mean-reverting names) dispatched by classification via `validate_candidate`; `Random`/`Unknown` are skipped. Returns use a one-bar execution lag (no lookahead) and `WFV_COST_PER_TRADE` is charged on every exposure change. A fold passes only if profitable **and** it has ≥ `WFV_MIN_TRADES_PER_FOLD` trades; a candidate passes with ≥ `WFV_MIN_FOLDS_PASSING` passing folds. `validate_universe`/`write_validation` mirror the screener pipeline (reusing `discover_tickers`/`available_date_range`); `scripts/run_validate.py` is the thin CLI. Breakout uses **strict** new-high/new-low inequalities so a flat series doesn't "break out" every day. 17 tests in `tests/test_validate.py` cover fold splitting, cost accounting, the no-lookahead guarantee, both strategies, the pass/fail gate (incl. costs flipping a winner to a loser), dispatch, and the pipeline. Added `WFV_COST_PER_TRADE` and strategy params to `config.py`. Smoke-tested the CLI against the sample drive. `ruff` clean, `pytest` 58 passed.
+
+---
+
 ## Completed Tickets
 
 - **T-001** — Data loader (`load_daily_bars`), 2026-06-02. See the ticket above for the completion note.
@@ -108,6 +129,7 @@
 - **T-003** — Screener pipeline (`screen.py` + `run_screen.py`), 2026-06-02. See the ticket above for the completion note.
 - **T-004** — Alpaca top-up (`topup_ticker` + `run_topup.py`), 2026-06-02. See the ticket above for the completion note.
 - **T-005** — Fix entry-point script imports (`No module named 'src'`), 2026-06-05. See the ticket above for the completion note.
+- **T-006** — Walk-forward validation harness (`validate.py` + `run_validate.py`), 2026-06-05. See the ticket above for the completion note.
 
 ---
 
