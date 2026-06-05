@@ -27,7 +27,15 @@ scripts/run_screen.py
 outputs/screen_results_YYYY-MM-DD.csv
     │
     ▼
-Manual review → promote to swing-trader TICKERS
+validate.py — validate_candidate()  (scripts/run_validate.py)
+    │  walk-forward backtest of a class-matched, cost-charged strategy;
+    │  reports which candidates survive out-of-sample
+    │
+    ▼
+outputs/validation_results_YYYY-MM-DD.csv
+    │
+    ▼
+Manual review + paper trading → promote to swing-trader TICKERS
 ```
 
 ---
@@ -40,6 +48,7 @@ Manual review → promote to swing-trader TICKERS
 | `data.py` | Read from drive, resample to daily, top-up from Alpaca |
 | `characterize.py` | Compute Hurst, ATR, autocorrelation, volume, drawdown |
 | `screen.py` | Discover the universe, characterize every ticker, rank + filter, write CSV |
+| `validate.py` | Walk-forward validation: class-matched long-only strategies (breakout / z-score reversion), rolling-fold backtest with trading costs, pass/fail per candidate |
 
 ## Scripts
 
@@ -47,6 +56,7 @@ Manual review → promote to swing-trader TICKERS
 |:-------|:--------|
 | `run_screen.py` | Run full characterization pass, output ranked CSV |
 | `run_topup.py` | Fetch recent bars from Alpaca to extend drive data |
+| `run_validate.py` | Walk-forward-validate candidates, output pass/fail CSV |
 
 ---
 

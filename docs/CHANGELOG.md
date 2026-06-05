@@ -2,6 +2,11 @@
 
 ## [2026-06-05]
 
+### Added
+- **T-006:** `src/screener/validate.py` — walk-forward validation. A pluggable `walk_forward(df, strategy, ...)` engine splits a candidate's history into `WFV_FOLDS` out-of-sample folds, charges `WFV_COST_PER_TRADE` on every exposure change, and scores it (a fold passes if profitable with ≥ `WFV_MIN_TRADES_PER_FOLD` trades; a candidate passes with ≥ `WFV_MIN_FOLDS_PASSING` passing folds). Two simple long-only strategies — `breakout_strategy` (Donchian, for Trending names) and `mean_reversion_strategy` (z-score, for Mean-Reverting names) — are dispatched by classification via `validate_candidate`; `Random`/`Unknown` are skipped. Signals act on the next bar (no lookahead). Plus `validate_universe`/`write_validation` and the `scripts/run_validate.py` CLI (`--tickers/--start/--end/--drive-path/--min-volume`) writing `outputs/validation_results_YYYY-MM-DD.csv`.
+- `config.WFV_COST_PER_TRADE` and strategy parameters (`BREAKOUT_LOOKBACK`, `BREAKOUT_EXIT_LOOKBACK`, `MEANREV_LOOKBACK`, `MEANREV_Z_ENTRY`, `MEANREV_Z_EXIT`).
+- `tests/test_validate.py` — 17 tests (synthetic series): fold splitting, cost accounting, the no-lookahead guarantee, both strategies, the pass/fail gate (incl. costs flipping a winner to a loser), classification dispatch, and the pipeline.
+
 ### Fixed
 - **T-005:** Entry-point scripts crashed with `ModuleNotFoundError: No module named 'src'` when run directly (`python scripts/run_screen.py`, `python scripts/run_topup.py`) because `scripts/`, not the repo root, lands on `sys.path[0]`. Added a `sys.path` bootstrap to each script (and moved the `src.screener` import into `main()`) so the package resolves regardless of cwd; lint stays clean with no suppressions. Tests had hidden this since pytest injects the repo root onto the path.
 
