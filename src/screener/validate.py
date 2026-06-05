@@ -205,11 +205,13 @@ def walk_forward(
 ) -> WFVResult:
     """Run ``strategy`` across rolling folds of ``df`` and score it.
 
-    A fold *passes* when the strategy **beats buy-and-hold** over that fold (net
-    of costs) **and** has at least ``min_trades`` trades. Requiring an edge over
-    simply holding the stock — rather than just any positive return — is what
-    separates skill from riding a rising market. The candidate passes when at
-    least ``min_folds_passing`` folds pass.
+    A fold *passes* when the strategy is **both profitable and beats
+    buy-and-hold** over that fold (net of costs) **and** has at least
+    ``min_trades`` trades. Both conditions matter: positive-return alone is just
+    bull-market beta, while beating buy-and-hold alone can mean merely losing
+    less than a crashing stock. Requiring the intersection is what separates
+    tradeable edge from both traps. The candidate passes when at least
+    ``min_folds_passing`` folds pass.
 
     Returns:
         A :class:`WFVResult`. With fewer rows than ``n_folds`` (or an empty
@@ -228,7 +230,12 @@ def walk_forward(
         total_return = float((1.0 + net_return.iloc[a:b]).prod() - 1.0)
         buy_hold = float((1.0 + daily_ret.iloc[a:b]).prod() - 1.0)
         excess = total_return - buy_hold
-        passing = excess > 0 and n_trades >= min_trades
+        # Pass requires BOTH: actually made money AND beat buy-and-hold. Excess
+        # alone isn't enough — a long-only strategy "beats" a stock that
+        # crashed just by sitting in cash (lost 2% vs the stock's 50%), which is
+        # not tradeable edge. Positive-return alone isn't enough either — that's
+        # just bull-market beta. The intersection is the honest bar.
+        passing = total_return > 0 and excess > 0 and n_trades >= min_trades
         folds.append(
             FoldResult(
                 fold=k,

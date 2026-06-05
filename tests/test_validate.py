@@ -217,6 +217,23 @@ def test_fold_must_beat_buy_hold_not_just_be_positive():
     assert not res.passed
 
 
+def test_losing_less_than_a_crash_does_not_pass():
+    # A steadily falling stock with an all-cash strategy. Every fold "beats"
+    # buy-and-hold (0% > the stock's loss) — positive excess — but makes no
+    # money. Beating a crash by sitting in cash is NOT tradeable edge, so no
+    # fold may pass. (min_trades=0 removes the trade gate so this isolates the
+    # "must be profitable" rule, not the trade-count rule.)
+    closes = np.linspace(100.0, 40.0, 120)  # -60% slide
+
+    def all_cash(d):
+        return pd.Series(0.0, index=d.index)
+
+    res = walk_forward(_frame(closes), all_cash, n_folds=4, min_trades=0, min_folds_passing=1)
+    assert all(f.excess_return > 0 for f in res.folds)     # cash beat the slide
+    assert all(f.total_return == 0 for f in res.folds)     # but earned nothing
+    assert not res.passed                                  # losing less ≠ a win
+
+
 def test_cost_for_dollar_volume_tiers():
     from src.screener.validate import cost_for_dollar_volume
 
