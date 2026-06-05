@@ -116,7 +116,8 @@ def characterize(df: pd.DataFrame) -> dict | None:
         ``config.MIN_HISTORY_DAYS`` rows to characterize reliably.
 
         Keys: ``hurst``, ``avg_atr_pct``, ``autocorr``, ``avg_volume``,
-        ``max_drawdown``, ``history_days``, ``classification``.
+        ``avg_dollar_volume``, ``max_drawdown``, ``history_days``,
+        ``classification``.
     """
     if len(df) < config.MIN_HISTORY_DAYS:
         return None
@@ -129,6 +130,9 @@ def characterize(df: pd.DataFrame) -> dict | None:
         "avg_atr_pct": avg_atr_pct(df),
         "autocorr": lag1_autocorr(returns),
         "avg_volume": float(df["volume"].mean()),
+        # Dollar volume (price × shares) is the real liquidity measure used to
+        # gate validation — see config.MIN_DOLLAR_VOLUME.
+        "avg_dollar_volume": float((df["close"] * df["volume"]).mean()),
         "max_drawdown": max_drawdown(df["close"]),
         "history_days": len(df),
         "classification": classify_hurst(hurst),

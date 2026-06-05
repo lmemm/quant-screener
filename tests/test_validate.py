@@ -74,7 +74,7 @@ def test_positions_act_next_bar_no_lookahead():
     def strat(d):
         return (d["close"] >= 110).astype(float)
 
-    net, entries = _strategy_returns(df, strat, cost=0.0)
+    net, entries, _bh = _strategy_returns(df, strat, cost=0.0)
     assert net.iloc[2] == pytest.approx(0.0)  # breakout day's jump not captured
     assert int(entries.sum()) == 1
 
@@ -88,7 +88,7 @@ def test_cost_is_charged_on_entry():
         return pos
 
     df = _frame([100.0, 100.0, 100.0, 100.0])
-    net, entries = _strategy_returns(df, enter_day1, cost=0.01)
+    net, entries, _bh = _strategy_returns(df, enter_day1, cost=0.01)
     assert int(entries.sum()) == 1
     assert net.sum() == pytest.approx(-0.01)  # one entry, charged once
 
@@ -105,15 +105,17 @@ def test_breakout_goes_long_on_new_high_and_holds():
 
 
 def test_breakout_captures_an_uptrend():
-    # On a clean monotonic uptrend the breakout enters once and holds: every
-    # fold is profitable, but only the first fold trades — so it does NOT pass
-    # the per-fold trade gate. That's the honest behaviour; assert the parts we
-    # can rely on (positive returns, captured the move with a single trade).
+    # On a clean monotonic uptrend the breakout makes money but does NOT beat
+    # buy-and-hold: it sits out the warmup while the stock rises, then just holds
+    # like a buy-and-holder. Positive return, but no edge over holding — so it
+    # correctly fails. (It also only trades once.)
     closes = np.linspace(100.0, 200.0, 200)
     res = walk_forward(_frame(closes), breakout_strategy, cost=0.0)
-    assert res.mean_fold_return > 0
+    assert res.mean_fold_return > 0      # it made money
+    assert res.mean_buy_hold > 0         # but so did simply holding
+    assert res.mean_excess_return <= 0   # no edge over buy-and-hold
     assert res.total_trades == 1
-    assert not res.passed  # buy-and-hold isn't re-validated each fold
+    assert not res.passed
 
 
 def test_mean_reversion_buys_dips():
@@ -131,6 +133,7 @@ def test_mean_reversion_passes_on_repeated_oscillation():
     closes = 100 + 8 * np.sin(t / 2.0)
     res = walk_forward(_frame(closes), mean_reversion_strategy, cost=0.0)
     assert res.mean_fold_return > 0
+    assert res.mean_excess_return > 0      # and beats buy-and-hold (flat market)
     assert res.total_trades >= res.n_folds  # multiple trades, spread across folds
     assert res.passed
 
@@ -181,17 +184,45 @@ def test_validate_candidate_skips_random():
 def test_wfvresult_to_row_has_all_columns():
     res = WFVResult(
         strategy="breakout",
-        folds=[FoldResult(1, None, None, 3, 0.1, True)],
+        folds=[FoldResult(1, None, None, 3, 0.1, 0.04, 0.06, True)],
         folds_passing=1,
         n_folds=1,
         passed=True,
         total_trades=3,
         mean_fold_return=0.1,
+        mean_buy_hold=0.04,
+        mean_excess_return=0.06,
     )
     row = res.to_row("AAPL", "Trending")
     assert row["ticker"] == "AAPL"
     assert row["classification"] == "Trending"
+    assert row["mean_excess_return"] == 0.06
     assert row["passed"] is True
+
+
+def test_fold_must_beat_buy_hold_not_just_be_positive():
+    # A strategy that is long the back half of each fold on a rising series:
+    # it makes money, but less than buy-and-hold (which was long the whole time).
+    # Positive return must NOT be enough to pass.
+    closes = np.linspace(100.0, 200.0, 120)
+
+    def half_long(d):
+        pos = pd.Series(0.0, index=d.index)
+        pos.iloc[len(d) // 2:] = 1.0
+        return pos
+
+    res = walk_forward(_frame(closes), half_long, n_folds=2, min_trades=1, min_folds_passing=1)
+    assert res.mean_fold_return > 0          # it did make money
+    assert res.mean_excess_return < 0        # but lost to buy-and-hold
+    assert not res.passed
+
+
+def test_cost_for_dollar_volume_tiers():
+    from src.screener.validate import cost_for_dollar_volume
+
+    assert cost_for_dollar_volume(100_000_000) == 0.0005  # deep
+    assert cost_for_dollar_volume(20_000_000) == 0.0015   # mid
+    assert cost_for_dollar_volume(1_000_000) == 0.0030    # thin -> most expensive
 
 
 # ── pipeline ─────────────────────────────────────────────────────────────────
@@ -207,6 +238,8 @@ def test_validate_universe_handles_empty_drive(tmp_path):
         "n_folds",
         "total_trades",
         "mean_fold_return",
+        "mean_buy_hold",
+        "mean_excess_return",
         "passed",
     ]
     assert frame.empty

@@ -1,5 +1,10 @@
 # Decisions
 
+## [2026-06-05] — Validation must beat buy-and-hold, gated by dollar volume, with liquidity-aware costs
+
+- **Decision:** A walk-forward fold passes only when the strategy's net return **exceeds buy-and-hold** for that fold (positive excess return), not merely when it's positive. Validation is gated on **average dollar volume** (`MIN_DOLLAR_VOLUME = $5M/day`), not share count, and each name is charged a **liquidity-aware cost** from `WFV_COST_TIERS` (≈5/15/30 bps by dollar volume) instead of a flat fee. No price floor.
+- **Reason:** The first full run passed ~45% of candidates — almost entirely an artifact of a rising 2020–2025 market (passers were positive buy-and-hold 65% of the time vs 36% for non-passers) plus illiquid microcaps showing fantastical fold returns (up to +448%) under an unrealistic flat 0.1% cost. "Made money" in a bull market is not edge; "beat just holding the stock" is the honest bar. Dollar volume — not share count — is what determines whether the backtest's fill/cost assumptions are credible (500k shares of a $0.50 stock is thin; of a $300 stock is deep). The owner correctly rejected an arbitrary *price* floor: the principled fix is to model cost/liquidity realistically and let any name that still clears the bar through, rather than excluding cheap stocks by fiat. Tiered costs are a transparent stand-in for spread/slippage until quote data is available.
+
 ## [2026-06-05] — Single-pass daily cache for universe-scale reads
 
 - **Decision:** Add a one-time `build_daily_cache` that reads the by-day archive once and writes a per-ticker daily parquet store under `data/processed/daily_cache/`. `screen`/`validate` read it via `load_daily`/`universe_tickers`, falling back to the live drive scan when no cache exists. The per-file aggregation is `groupby([ticker, day-floor]).agg(...)`, not `groupby(ticker).resample("1D")`.

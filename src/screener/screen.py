@@ -26,6 +26,7 @@ RESULT_COLUMNS = [
     "avg_atr_pct",
     "autocorr",
     "avg_volume",
+    "avg_dollar_volume",
     "max_drawdown",
     "history_days",
     "classification",

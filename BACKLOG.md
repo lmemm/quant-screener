@@ -141,6 +141,23 @@
 
 ---
 
+### T-008: Honest validation — beat buy-and-hold, dollar-volume gate, liquidity-aware costs
+- **Status:** ✅ Done
+- **Priority:** P1
+- **Type:** Feature / Correctness
+- **Description:** The first full validation run passed 476/1,053 candidates (~45%) — far too many. Investigation showed it was mostly **bull-market beta**: passers went up over 2020–2025 far more than non-passers (65% vs 36% positive buy-and-hold), the pass bar was merely "any positive return," and illiquid microcaps (fold returns up to +448%) dominated the top under an unrealistic flat 0.1% cost. Make validation honest.
+- **Acceptance criteria:**
+  - [x] A fold passes only if the strategy **beats buy-and-hold** over that fold (excess return > 0), not just positive — `walk_forward` computes per-fold buy-hold and excess
+  - [x] Gate validation on **dollar volume** (`config.MIN_DOLLAR_VOLUME`), not share count; `characterize` reports `avg_dollar_volume`
+  - [x] **Liquidity-aware cost** (`config.WFV_COST_TIERS` via `cost_for_dollar_volume`) instead of a flat fee — thin names pay more
+  - [x] Output reports `mean_buy_hold` and `mean_excess_return`; ranking is by excess (skill), not raw return
+  - [x] Tests for the beat-buy-hold gate, cost tiers, and new columns; `ruff`/`pytest` green
+- **Files likely involved:** `src/screener/validate.py`, `src/screener/characterize.py`, `src/screener/config.py`, `src/screener/screen.py`, `tests/`
+- **Notes:** Owner pushed back (correctly) on an arbitrary *price* floor — the real lever is dollar-volume + realistic costs, not excluding cheap stocks by fiat. No price floor was added; cheap names that genuinely clear an honest cost still pass.
+- **Completion note:** `walk_forward` now benchmarks every fold against buy-and-hold and a fold passes only on positive **excess** return (+ the trade-count gate); `FoldResult`/`WFVResult` carry `buy_hold_return`/`excess_return` and the CSV gains `mean_buy_hold`/`mean_excess_return` (ranking by excess). `characterize` adds `avg_dollar_volume`; `validate_universe` gates on `MIN_DOLLAR_VOLUME` ($5M) and charges a per-ticker `cost_for_dollar_volume` from tiered `WFV_COST_TIERS` (5/15/30 bps by liquidity). Found and fixed a test-isolation bug surfaced by this work: `screen_universe(sample_drive)` had started auto-using the machine's real cache — sample-drive tests now pass an explicit empty `cache_dir`. `ruff` clean, `pytest` 69 passed. Re-run off the existing cache (no rebuild) to regenerate the CSVs.
+
+---
+
 ## Completed Tickets
 
 - **T-001** — Data loader (`load_daily_bars`), 2026-06-02. See the ticket above for the completion note.
@@ -150,6 +167,30 @@
 - **T-005** — Fix entry-point script imports (`No module named 'src'`), 2026-06-05. See the ticket above for the completion note.
 - **T-006** — Walk-forward validation harness (`validate.py` + `run_validate.py`), 2026-06-05. See the ticket above for the completion note.
 - **T-007** — Single-pass daily cache (`cache.py` + `build_cache.py`), 2026-06-05. See the ticket above for the completion note.
+- **T-008** — Honest validation (beat buy-and-hold, dollar-volume gate, liquidity-aware costs), 2026-06-05. See the ticket above for the completion note.
+
+---
+
+## Open Tickets (next up)
+
+### T-009: Investigate the Hurst classification skew
+- **Status:** ⬚ Open
+- **Priority:** P2
+- **Type:** Investigation
+- **Description:** The first full screen labelled 1,020 Trending vs only 33 Mean-Reverting (≈31:1). Daily-return Hurst shouldn't be that lopsided — the R/S estimator is known to bias high on short series. Verify the estimator against series of known Hurst, check the thresholds, and correct any bias so the trending/mean-reverting split is trustworthy (the whole pipeline keys off this label).
+- **Acceptance criteria:**
+  - [ ] Estimator validated against synthetic fractional series of known H
+  - [ ] Bias quantified; thresholds and/or method adjusted if warranted
+  - [ ] Tests; `ruff`/`pytest` green
+
+### T-010: Collision-safe cache filenames
+- **Status:** ⬚ Open
+- **Priority:** P3
+- **Type:** Bug
+- **Description:** The full build wrote 19,301 ticker frames but only 19,285 distinct files — ~16 collisions from `_safe_name` mapping `/` → `_` (e.g. two symbols collapsing to the same stem). Use a collision-safe scheme so no ticker is silently overwritten.
+- **Acceptance criteria:**
+  - [ ] No two tickers map to the same cache file
+  - [ ] Test covering a colliding pair; `ruff`/`pytest` green
 
 ---
 
