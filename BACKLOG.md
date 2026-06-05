@@ -85,12 +85,29 @@
 
 ---
 
+### T-005: Fix entry-point scripts — `ModuleNotFoundError: No module named 'src'`
+- **Status:** ✅ Done
+- **Priority:** P1
+- **Type:** Bug
+- **Description:** Running the documented entry points directly (`python scripts/run_screen.py`, `python scripts/run_topup.py`) crashes immediately with `ModuleNotFoundError: No module named 'src'`. Both scripts import `from src.screener... import ...` at module top, but running a file directly puts `scripts/` (not the repo root) on `sys.path[0]`, so `src` is not importable. The test suite masked this because pytest injects the repo root onto `sys.path`; there is no `pyproject.toml`/`pytest.ini`/root `conftest.py` to make the package importable otherwise.
+- **Acceptance criteria:**
+  - [x] `python scripts/run_screen.py ...` runs without an import error
+  - [x] `python scripts/run_topup.py ...` runs without an import error
+  - [x] Fix keeps `ruff check .` clean with no `# noqa` suppressions (per CLAUDE.md)
+  - [x] `pytest` still passes
+- **Files likely involved:** `scripts/run_screen.py`, `scripts/run_topup.py`
+- **Notes:** Found during a post-merge status check after PR #3. The pipeline logic itself was correct; only the script-launch path was broken.
+- **Completion note:** Added a `sys.path.insert(0, <repo root>)` bootstrap at the top of each script and moved the `src.screener` import into `main()` so it resolves after the bootstrap — avoiding an E402 lint error without suppressing it. Smoke-tested `run_screen.py` end-to-end against the sample drive (writes the CSV; 0 rows as expected for the 2-day sample). `ruff` clean, `pytest` 41 passed.
+
+---
+
 ## Completed Tickets
 
 - **T-001** — Data loader (`load_daily_bars`), 2026-06-02. See the ticket above for the completion note.
 - **T-002** — Characterization module (`characterize`), 2026-06-02. See the ticket above for the completion note.
 - **T-003** — Screener pipeline (`screen.py` + `run_screen.py`), 2026-06-02. See the ticket above for the completion note.
 - **T-004** — Alpaca top-up (`topup_ticker` + `run_topup.py`), 2026-06-02. See the ticket above for the completion note.
+- **T-005** — Fix entry-point script imports (`No module named 'src'`), 2026-06-05. See the ticket above for the completion note.
 
 ---
 
