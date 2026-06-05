@@ -39,6 +39,7 @@ Manual review → promote to swing-trader TICKERS
 | `config.py` | All paths, thresholds, and env variables |
 | `data.py` | Read from drive, resample to daily, top-up from Alpaca |
 | `characterize.py` | Compute Hurst, ATR, autocorrelation, volume, drawdown |
+| `screen.py` | Discover the universe, characterize every ticker, rank + filter, write CSV |
 
 ## Scripts
 
