@@ -1,5 +1,10 @@
 # Changelog
 
+## [2026-06-06]
+
+### Fixed
+- **T-009:** The Hurst estimator was biased **high by +0.05 to +0.08** (proven against fractional Gaussian noise of known H), which mislabeled ~half of all random walks as "Trending" and produced the implausible 31:1 Trending:Mean-Reverting screen skew. Added the **Anis-Lloyd-Peters bias correction** (`characterize._expected_rs`; `hurst_exponent` now returns `0.5 + empirical_slope − expected_iid_slope`) so a true random walk estimates ~0.5 instead of ~0.55. Because the de-biased estimator retains a small residual negative bias and its per-series noise (~±0.05) is as wide as the old threshold band, **recalibrated the classification thresholds to synthetic ground truth**: `HURST_TREND_MIN 0.55 → 0.51`, `HURST_REVERT_MAX 0.45 → 0.43`. Real-universe split corrected from 1,020/33/2,426 to **158 Trending / 856 Mean-Reverting / 2,465 Random**. 4 new regression tests in `tests/test_characterize.py` (unbiased-on-random-walk, random-walks-rarely-Trending, tracks-known-fGn, expected-R/S-grows). See DECISIONS.md for the full rationale and the noise/validation-backstop reasoning.
+
 ## [2026-06-05]
 
 ### Changed
