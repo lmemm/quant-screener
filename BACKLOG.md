@@ -185,14 +185,28 @@
   - [x] Tests; `ruff`/`pytest` green
 - **Completion note:** Confirmed the R/S estimator had a strong **upward bias of +0.05 to +0.08** by testing it on exact fractional Gaussian noise of known H (Cholesky synthesis): a true random walk (H=0.50) was mislabeled **Trending 46–62%** of the time and Mean-Reverting ~never — the source of the 31:1 skew. Fixed with the **Anis-Lloyd-Peters correction** (`H = 0.5 + empirical_slope − expected_iid_slope` via new `_expected_rs`), which removes the gross bias (true random walk → ~0.47–0.48). The correction *flipped* the real-universe split toward Mean-Reverting, revealing two things: (1) daily single-stock returns are genuinely mildly mean-reverting (short-term reversal; equity momentum is cross-sectional/multi-month, not a daily-autocorr effect), and (2) a small residual negative bias remains and the old 0.45/0.55 thresholds are tighter than the estimator's ~±0.05 noise. **Recalibrated thresholds to ground truth** (`HURST_TREND_MIN 0.55→0.51`, `HURST_REVERT_MAX 0.45→0.43`) so a true-H=0.55 series lands Trending and true-H=0.45 lands Mean-Reverting. Real-universe split went 1,020/33/2,426 (T:MR 31:1) → **158 Trending / 856 Mean-Reverting / 2,465 Random** (4.5% / 24.6% / 70.9%) — believable from both directions. Added 4 regression tests (unbiased-on-random-walk, random-walks-rarely-Trending, tracks-known-fGn, expected-RS-grows); `ruff` clean, `pytest` 74 passed. Decision + the noise/validation-backstop caveat logged in DECISIONS.md.
 
+### T-012: Universe hygiene — exclude ETPs / leveraged / inverse / volatility products
+- **Status:** ⬚ Open
+- **Priority:** P2
+- **Type:** Feature / Correctness
+- **Description:** Surfaced by the T-009 re-validation. Once the Hurst labels were corrected, validation passed **311/756 (41%)**, dominated by **Mean-Reverting (300)**, and the top passers are not swing-trade stocks: leveraged/inverse/volatility ETPs (e.g. **VIXY** = VIX short-term futures, **SCO** = −2× inverse crude) and explosive microcaps (**VRPX +530%, ISPC +553%, MEGL +124%** excess). These *structurally* mean-revert or decay, so the z-score reversion strategy "wins" on them as a backtest artifact; the $5M dollar-volume gate doesn't exclude them (a name that spiked clears it on the spike). Filter the screening/validation universe to common stock only — exclude ETFs/ETPs/leveraged/inverse/volatility instruments — so the pass list reflects tradeable swing candidates.
+- **Acceptance criteria:**
+  - [ ] A universe filter that excludes ETPs / leveraged / inverse / volatility instruments (keep common stock)
+  - [ ] Wired into `screen_universe` / `validate_universe`
+  - [ ] Tests (synthetic / sample — no drive)
+  - [ ] `ruff`/`pytest` green
+  - [ ] **[local-deferred]** Confirm on real data: re-screen + re-validate off the cache, record the cleaned pass count
+- **Notes:** ETP-identification approach is an **open decision** — (a) **Alpaca asset API** (`get_all_assets`; gives exchange + ETF flag; creds already in `config.py`; network-dependent — works on web if creds present) — *recommended, authoritative*; or (b) a small **committed reference list** (fully offline, simpler, needs maintenance). Decide and log in DECISIONS.md. Web-friendly except the [local-deferred] confirmation run.
+
 ### T-011: Stricter overall gate — consider net-positive and/or ≥4 folds
 - **Status:** ⬚ Open
 - **Priority:** P2
 - **Type:** Enhancement
-- **Description:** Under the corrected rule, 13 of 83 passers (16%) cleared ≥3 of 6 folds yet have a *negative* overall mean return — they won in half the periods and lost more in the rest. Fold-counting is deliberately robust to one bad period, but a net-losing "pass" is questionable. Evaluate requiring the strategy to also be **net-positive over the full history** and/or raising `WFV_MIN_FOLDS_PASSING` to 4. Decide with eyes on the trade-off (fewer, higher-conviction passers vs. missing names that work most of the time).
+- **Description:** Under the corrected rule, 13 of 83 passers (16%) cleared ≥3 of 6 folds yet have a *negative* overall mean return — they won in half the periods and lost more in the rest. Fold-counting is deliberately robust to one bad period, but a net-losing "pass" is questionable. Evaluate requiring the strategy to also be **net-positive over the full history** and/or raising `WFV_MIN_FOLDS_PASSING` to 4. Decide with eyes on the trade-off (fewer, higher-conviction passers vs. missing names that work most of the time). **Note (2026-06-06):** the T-009 re-validation makes this more urgent — the corrected labels push the pass rate to 41% and surface +500% microcap outliers, so a stricter overall gate (net-positive at minimum) is now well-motivated. Best evaluated *after* T-012 cleans the universe.
 - **Acceptance criteria:**
   - [ ] Decision recorded in DECISIONS.md with the trade-off
   - [ ] Whatever gate is chosen is implemented + tested; `ruff`/`pytest` green
+  - [ ] **[local-deferred]** Real-data confirmation: re-validate off the cache, record the new pass count
 
 ### T-010: Collision-safe cache filenames
 - **Status:** ⬚ Open
@@ -202,6 +216,8 @@
 - **Acceptance criteria:**
   - [ ] No two tickers map to the same cache file
   - [ ] Test covering a colliding pair; `ruff`/`pytest` green
+  - [ ] **[local-deferred]** Optional: rebuild the cache (~28 min) to apply the new scheme to the existing store
+- **Notes:** Web-friendly — code + the colliding-pair unit test need no drive; collision-freedom over the real symbol list can be checked by running the naming fn over the ticker list. The cache rebuild is the only local step.
 
 ---
 
