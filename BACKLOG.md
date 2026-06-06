@@ -183,6 +183,15 @@
   - [ ] Bias quantified; thresholds and/or method adjusted if warranted
   - [ ] Tests; `ruff`/`pytest` green
 
+### T-011: Stricter overall gate — consider net-positive and/or ≥4 folds
+- **Status:** ⬚ Open
+- **Priority:** P2
+- **Type:** Enhancement
+- **Description:** Under the corrected rule, 13 of 83 passers (16%) cleared ≥3 of 6 folds yet have a *negative* overall mean return — they won in half the periods and lost more in the rest. Fold-counting is deliberately robust to one bad period, but a net-losing "pass" is questionable. Evaluate requiring the strategy to also be **net-positive over the full history** and/or raising `WFV_MIN_FOLDS_PASSING` to 4. Decide with eyes on the trade-off (fewer, higher-conviction passers vs. missing names that work most of the time).
+- **Acceptance criteria:**
+  - [ ] Decision recorded in DECISIONS.md with the trade-off
+  - [ ] Whatever gate is chosen is implemented + tested; `ruff`/`pytest` green
+
 ### T-010: Collision-safe cache filenames
 - **Status:** ⬚ Open
 - **Priority:** P3
