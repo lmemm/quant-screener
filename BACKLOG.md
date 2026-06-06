@@ -168,20 +168,22 @@
 - **T-006** — Walk-forward validation harness (`validate.py` + `run_validate.py`), 2026-06-05. See the ticket above for the completion note.
 - **T-007** — Single-pass daily cache (`cache.py` + `build_cache.py`), 2026-06-05. See the ticket above for the completion note.
 - **T-008** — Honest validation (beat buy-and-hold, dollar-volume gate, liquidity-aware costs), 2026-06-05. See the ticket above for the completion note.
+- **T-009** — Hurst estimator bias fix (Anis-Lloyd correction + calibrated thresholds), 2026-06-06. See the ticket above for the completion note.
 
 ---
 
 ## Open Tickets (next up)
 
 ### T-009: Investigate the Hurst classification skew
-- **Status:** ⬚ Open
+- **Status:** ✅ Done
 - **Priority:** P2
 - **Type:** Investigation
 - **Description:** The first full screen labelled 1,020 Trending vs only 33 Mean-Reverting (≈31:1). Daily-return Hurst shouldn't be that lopsided — the R/S estimator is known to bias high on short series. Verify the estimator against series of known Hurst, check the thresholds, and correct any bias so the trending/mean-reverting split is trustworthy (the whole pipeline keys off this label).
 - **Acceptance criteria:**
-  - [ ] Estimator validated against synthetic fractional series of known H
-  - [ ] Bias quantified; thresholds and/or method adjusted if warranted
-  - [ ] Tests; `ruff`/`pytest` green
+  - [x] Estimator validated against synthetic fractional series of known H
+  - [x] Bias quantified; thresholds and/or method adjusted if warranted
+  - [x] Tests; `ruff`/`pytest` green
+- **Completion note:** Confirmed the R/S estimator had a strong **upward bias of +0.05 to +0.08** by testing it on exact fractional Gaussian noise of known H (Cholesky synthesis): a true random walk (H=0.50) was mislabeled **Trending 46–62%** of the time and Mean-Reverting ~never — the source of the 31:1 skew. Fixed with the **Anis-Lloyd-Peters correction** (`H = 0.5 + empirical_slope − expected_iid_slope` via new `_expected_rs`), which removes the gross bias (true random walk → ~0.47–0.48). The correction *flipped* the real-universe split toward Mean-Reverting, revealing two things: (1) daily single-stock returns are genuinely mildly mean-reverting (short-term reversal; equity momentum is cross-sectional/multi-month, not a daily-autocorr effect), and (2) a small residual negative bias remains and the old 0.45/0.55 thresholds are tighter than the estimator's ~±0.05 noise. **Recalibrated thresholds to ground truth** (`HURST_TREND_MIN 0.55→0.51`, `HURST_REVERT_MAX 0.45→0.43`) so a true-H=0.55 series lands Trending and true-H=0.45 lands Mean-Reverting. Real-universe split went 1,020/33/2,426 (T:MR 31:1) → **158 Trending / 856 Mean-Reverting / 2,465 Random** (4.5% / 24.6% / 70.9%) — believable from both directions. Added 4 regression tests (unbiased-on-random-walk, random-walks-rarely-Trending, tracks-known-fGn, expected-RS-grows); `ruff` clean, `pytest` 74 passed. Decision + the noise/validation-backstop caveat logged in DECISIONS.md.
 
 ### T-011: Stricter overall gate — consider net-positive and/or ≥4 folds
 - **Status:** ⬚ Open

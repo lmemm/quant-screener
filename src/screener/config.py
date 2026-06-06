@@ -32,8 +32,13 @@ ALPACA_API_SECRET = os.getenv("ALPACA_API_SECRET", "")
 # ── Screening thresholds ───────────────────────────────────────────────────
 MIN_AVG_VOLUME = 500_000       # minimum average daily *share* volume
 MIN_HISTORY_DAYS = 500         # minimum trading days of history required
-HURST_TREND_MIN = 0.55         # Hurst >= this → trending candidate
-HURST_REVERT_MAX = 0.45        # Hurst <= this → mean-reversion candidate
+# Thresholds calibrated to the bias-corrected R/S estimator against synthetic
+# series of *known* Hurst (T-009): the estimator reads a true-H=0.55 series at
+# ~0.51 and a true-H=0.45 series at ~0.43 (n≈1000), so these bands map back to
+# the intended "true H within ±0.05 of 0.5" split. Asymmetric because a small
+# residual negative bias remains after the Anis-Lloyd correction.
+HURST_TREND_MIN = 0.51         # Hurst >= this → trending candidate
+HURST_REVERT_MAX = 0.43        # Hurst <= this → mean-reversion candidate
 
 # Minimum average daily *dollar* volume (close × shares). Share count alone is a
 # poor liquidity proxy — 500k shares of a $0.50 stock is $250k/day (thin, wide

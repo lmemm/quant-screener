@@ -10,6 +10,7 @@ import pytest
 
 from src.screener import config
 from src.screener.characterize import (
+    _expected_rs,
     avg_atr_pct,
     characterize,
     classify_hurst,
@@ -17,6 +18,25 @@ from src.screener.characterize import (
     lag1_autocorr,
     max_drawdown,
 )
+
+
+def _fgn(n: int, H: float, seed: int) -> np.ndarray:
+    """Exact fractional Gaussian noise of length n with Hurst H (Cholesky).
+
+    fGn is the increment series of fractional Brownian motion; its theoretical
+    Hurst exponent is exactly H, so it is the right synthetic test bed for the
+    estimator (daily returns are such an increment series). Kept small (single
+    series, modest n) so the suite stays fast — see scratch/ for the full sweep.
+    """
+    k = np.arange(n)
+    gamma = 0.5 * (
+        np.abs(k - 1) ** (2 * H) - 2 * np.abs(k) ** (2 * H) + np.abs(k + 1) ** (2 * H)
+    )
+    cov = np.empty((n, n))
+    for i in range(n):
+        cov[i] = gamma[np.abs(np.arange(n) - i)]
+    chol = np.linalg.cholesky(cov)
+    return chol @ np.random.default_rng(seed).standard_normal(n)
 
 
 def _ohlcv_from_close(close: np.ndarray, volume: float = 1_000_000) -> pd.DataFrame:
@@ -137,6 +157,53 @@ def test_hurst_orders_trending_above_mean_reverting():
 
 def test_hurst_too_short_is_nan():
     assert np.isnan(hurst_exponent(np.array([0.1, -0.2, 0.05])))
+
+
+# ── Hurst bias correction (T-009) ────────────────────────────────────────────
+
+def test_hurst_unbiased_on_random_walk():
+    """A true random walk must estimate near 0.5, not the ~0.55 a naive R/S
+    slope returns. This is the regression guard for the T-009 upward bias that
+    mislabeled ~half of all random walks as 'Trending'."""
+    estimates = [
+        hurst_exponent(np.random.default_rng(s).normal(0, 1, 2000))
+        for s in range(20)
+    ]
+    mean_est = float(np.mean(estimates))
+    # Pre-fix this averaged ~0.548 (well above the 0.55 trending threshold);
+    # the corrected estimator centers just under 0.5.
+    assert 0.44 < mean_est < 0.52, mean_est
+
+
+def test_random_walks_rarely_labeled_trending():
+    """The whole pipeline keys off the label: genuine noise must not flood the
+    'Trending' bucket (pre-fix ~46–62% did)."""
+    labels = [
+        classify_hurst(hurst_exponent(np.random.default_rng(s).normal(0, 1, 1500)))
+        for s in range(30)
+    ]
+    trending = labels.count("Trending")
+    assert trending <= 6, f"{trending}/30 random walks labeled Trending"
+
+
+def test_hurst_tracks_known_fgn():
+    """On fractional Gaussian noise of known H, the estimate tracks the truth:
+    persistent H=0.6 reads higher than anti-persistent H=0.4, and the mean over
+    a few draws stays within a reasonable band of each true value. Averaged over
+    seeds because a single fGn draw has ~±0.05 estimator variance — the bias
+    correction targets the central tendency, which is what this guards."""
+    mean_low = float(np.mean([hurst_exponent(_fgn(1000, H=0.40, seed=s)) for s in range(6)]))
+    mean_high = float(np.mean([hurst_exponent(_fgn(1000, H=0.60, seed=s)) for s in range(6)]))
+    assert mean_high > mean_low
+    assert abs(mean_low - 0.40) < 0.10, mean_low
+    assert abs(mean_high - 0.60) < 0.10, mean_high
+
+
+def test_expected_rs_grows_with_window():
+    """The Anis-Lloyd expectation is positive and increasing in window size."""
+    vals = [_expected_rs(w) for w in (8, 16, 32, 64, 128)]
+    assert all(v > 0 for v in vals)
+    assert all(b > a for a, b in zip(vals, vals[1:]))
 
 
 # ── classification ───────────────────────────────────────────────────────────

@@ -24,10 +24,26 @@ def _daily_returns(close: pd.Series) -> pd.Series:
     return close.pct_change().dropna()
 
 
+def _expected_rs(w: int) -> float:
+    """Expected rescaled range of an i.i.d. series over a window of length ``w``.
+
+    The Anis-Lloyd (1976) approximation with Peters' ``(w-0.5)/w`` small-sample
+    factor. A naive R/S slope reads ~0.5–0.6 even on true white noise because
+    E[R/S] grows slightly faster than ``w**0.5`` at finite ``w``; subtracting
+    this expectation de-biases the estimate (see T-009 / DECISIONS.md).
+    """
+    i = np.arange(1, w)
+    ratio_sum = float(np.sum(np.sqrt((w - i) / i)))
+    return (w - 0.5) / w * (w * np.pi / 2.0) ** -0.5 * ratio_sum
+
+
 def hurst_exponent(returns: pd.Series | np.ndarray) -> float:
     """Hurst exponent of a return series via rescaled-range (R/S) analysis.
 
-    Returns ``nan`` when there are too few points to estimate a slope.
+    Uses the Anis-Lloyd-Peters bias correction: the Hurst exponent is
+    ``0.5 + (empirical R/S slope − expected i.i.d. R/S slope)``, so a true
+    random walk lands at ~0.5 instead of the ~0.55 a naive R/S slope returns
+    (T-009). Returns ``nan`` when there are too few points to estimate a slope.
     """
     series = np.asarray(returns, dtype=float)
     series = series[np.isfinite(series)]
@@ -42,6 +58,7 @@ def hurst_exponent(returns: pd.Series | np.ndarray) -> float:
 
     log_w: list[float] = []
     log_rs: list[float] = []
+    log_expected: list[float] = []
     for w in windows:
         n_chunks = n // w
         if n_chunks < 1:
@@ -57,11 +74,15 @@ def hurst_exponent(returns: pd.Series | np.ndarray) -> float:
         if rs_values:
             log_w.append(np.log(w))
             log_rs.append(np.log(np.mean(rs_values)))
+            log_expected.append(np.log(_expected_rs(w)))
 
     if len(log_rs) < 2:
         return float("nan")
-    slope = np.polyfit(log_w, log_rs, 1)[0]
-    return float(slope)
+    empirical_slope = np.polyfit(log_w, log_rs, 1)[0]
+    expected_slope = np.polyfit(log_w, log_expected, 1)[0]
+    # Under the null the empirical slope equals the expected slope, so a true
+    # random walk returns exactly 0.5; persistence/anti-persistence move it.
+    return float(0.5 + empirical_slope - expected_slope)
 
 
 def avg_atr_pct(df: pd.DataFrame, period: int = _ATR_PERIOD) -> float:
