@@ -122,6 +122,42 @@
 
 ---
 
+### T-007: Single-pass daily cache (universe screening is infeasible without it)
+- **Status:** ✅ Done
+- **Priority:** P1
+- **Type:** Feature / Performance
+- **Description:** `load_daily_bars` reads data **per ticker** by scanning every daily file and keeping one symbol's rows. The archive is partitioned **by day** (each file = all ~12k tickers for one day), so a full-universe screen re-reads the entire 23 GB archive once per ticker. Benchmarked on the real drive at **~17 min/ticker** → the full ~12k-name universe is infeasible (thousands of hours). Build a one-pass cache: read the archive **once**, resample every ticker to daily in that pass, and write a compact per-ticker daily store so screen/validate read in seconds.
+- **Acceptance criteria:**
+  - [x] `build_daily_cache(...)` in `src/screener/cache.py` — one pass over the archive → `data/processed/daily_cache/{TICKER}.parquet`
+  - [x] `load_cached_daily(ticker, start, end)` returns the **identical** frame as `load_daily_bars` (asserted bit-for-bit by tests, incl. on real data)
+  - [x] `load_daily`/`universe_tickers` dispatchers: use cache when built, fall back to the drive otherwise
+  - [x] `screen_universe`/`validate_universe` read via the cache transparently
+  - [x] `scripts/build_cache.py` CLI (`--start/--end/--drive-path/--cache-dir`)
+  - [x] Tests incl. the equality (trust-anchor) test on the sample drive
+  - [x] `ruff check .` passes, `pytest` passes
+- **Files likely involved:** `src/screener/cache.py`, `scripts/build_cache.py`, `tests/test_cache.py`, `src/screener/screen.py`, `src/screener/validate.py`
+- **Notes:** Cache lives under gitignored `data/processed/`. Derived artifact — rebuild when the drive gains new days; Alpaca top-ups are still appended at read time so they need no rebuild. The per-file aggregation is `groupby([ticker, day-floor]).agg(...)`, **not** `groupby(ticker).resample("1D")` — the latter materializes an empty date range per ticker and was ~8× slower in benchmarking.
+- **Completion note:** Added `src/screener/cache.py`. `build_daily_cache` reads each day file once, dedups/dropna/aggregates to one daily bar per `(ticker, day)`, collapses any cross-file day-boundary spill, and writes per-ticker parquet. `load_cached_daily` mirrors `load_daily_bars` exactly (date filter + top-up append). `load_daily`/`universe_tickers` pick cache-or-drive; `screen_universe`/`validate_universe` use them (lazy import to avoid a cycle). Verified on the **real drive** (AAPL/MSFT/NVDA, Aug–Sep 2025): output bit-for-bit `IDENTICAL` to the live loader. Benchmark caught a slow first implementation (per-file `groupby+resample`, ~3.7 hr full build) and the `groupby([ticker, day])` rewrite brought it to **~28 min full build, then sub-second reads** (vs ~3,400 hr for a per-ticker full-universe screen). 14 tests in `tests/test_cache.py` (incl. the equality trust anchor); `ruff` clean, `pytest` 66 passed.
+
+---
+
+### T-008: Honest validation — beat buy-and-hold, dollar-volume gate, liquidity-aware costs
+- **Status:** ✅ Done
+- **Priority:** P1
+- **Type:** Feature / Correctness
+- **Description:** The first full validation run passed 476/1,053 candidates (~45%) — far too many. Investigation showed it was mostly **bull-market beta**: passers went up over 2020–2025 far more than non-passers (65% vs 36% positive buy-and-hold), the pass bar was merely "any positive return," and illiquid microcaps (fold returns up to +448%) dominated the top under an unrealistic flat 0.1% cost. Make validation honest.
+- **Acceptance criteria:**
+  - [x] A fold passes only if the strategy is **both profitable AND beats buy-and-hold** over that fold (return > 0 and excess > 0) — `walk_forward` computes per-fold buy-hold and excess
+  - [x] Gate validation on **dollar volume** (`config.MIN_DOLLAR_VOLUME`), not share count; `characterize` reports `avg_dollar_volume`
+  - [x] **Liquidity-aware cost** (`config.WFV_COST_TIERS` via `cost_for_dollar_volume`) instead of a flat fee — thin names pay more
+  - [x] Output reports `mean_buy_hold` and `mean_excess_return`; ranking is by excess (skill), not raw return
+  - [x] Tests for the beat-buy-hold gate, cost tiers, and new columns; `ruff`/`pytest` green
+- **Files likely involved:** `src/screener/validate.py`, `src/screener/characterize.py`, `src/screener/config.py`, `src/screener/screen.py`, `tests/`
+- **Notes:** Owner pushed back (correctly) on an arbitrary *price* floor — the real lever is dollar-volume + realistic costs, not excluding cheap stocks by fiat. No price floor was added; cheap names that genuinely clear an honest cost still pass.
+- **Completion note:** `walk_forward` now benchmarks every fold against buy-and-hold and a fold passes only when the strategy is **both profitable and beats buy-and-hold** (return > 0 **and** excess > 0, + the trade-count gate). The re-run caught the in-between trap: requiring excess alone *raised* the pass rate (a long-only strategy "beats" a crashing stock by sitting in cash), so both conditions are required. `FoldResult`/`WFVResult` carry `buy_hold_return`/`excess_return` and the CSV gains `mean_buy_hold`/`mean_excess_return` (ranking by excess). `characterize` adds `avg_dollar_volume`; `validate_universe` gates on `MIN_DOLLAR_VOLUME` ($5M) and charges a per-ticker `cost_for_dollar_volume` from tiered `WFV_COST_TIERS` (5/15/30 bps by liquidity). Found and fixed a test-isolation bug surfaced by this work: `screen_universe(sample_drive)` had started auto-using the machine's real cache — sample-drive tests now pass an explicit empty `cache_dir`. `ruff` clean, `pytest` 69 passed. Re-run off the existing cache (no rebuild) to regenerate the CSVs.
+
+---
+
 ## Completed Tickets
 
 - **T-001** — Data loader (`load_daily_bars`), 2026-06-02. See the ticket above for the completion note.
@@ -130,6 +166,40 @@
 - **T-004** — Alpaca top-up (`topup_ticker` + `run_topup.py`), 2026-06-02. See the ticket above for the completion note.
 - **T-005** — Fix entry-point script imports (`No module named 'src'`), 2026-06-05. See the ticket above for the completion note.
 - **T-006** — Walk-forward validation harness (`validate.py` + `run_validate.py`), 2026-06-05. See the ticket above for the completion note.
+- **T-007** — Single-pass daily cache (`cache.py` + `build_cache.py`), 2026-06-05. See the ticket above for the completion note.
+- **T-008** — Honest validation (beat buy-and-hold, dollar-volume gate, liquidity-aware costs), 2026-06-05. See the ticket above for the completion note.
+
+---
+
+## Open Tickets (next up)
+
+### T-009: Investigate the Hurst classification skew
+- **Status:** ⬚ Open
+- **Priority:** P2
+- **Type:** Investigation
+- **Description:** The first full screen labelled 1,020 Trending vs only 33 Mean-Reverting (≈31:1). Daily-return Hurst shouldn't be that lopsided — the R/S estimator is known to bias high on short series. Verify the estimator against series of known Hurst, check the thresholds, and correct any bias so the trending/mean-reverting split is trustworthy (the whole pipeline keys off this label).
+- **Acceptance criteria:**
+  - [ ] Estimator validated against synthetic fractional series of known H
+  - [ ] Bias quantified; thresholds and/or method adjusted if warranted
+  - [ ] Tests; `ruff`/`pytest` green
+
+### T-011: Stricter overall gate — consider net-positive and/or ≥4 folds
+- **Status:** ⬚ Open
+- **Priority:** P2
+- **Type:** Enhancement
+- **Description:** Under the corrected rule, 13 of 83 passers (16%) cleared ≥3 of 6 folds yet have a *negative* overall mean return — they won in half the periods and lost more in the rest. Fold-counting is deliberately robust to one bad period, but a net-losing "pass" is questionable. Evaluate requiring the strategy to also be **net-positive over the full history** and/or raising `WFV_MIN_FOLDS_PASSING` to 4. Decide with eyes on the trade-off (fewer, higher-conviction passers vs. missing names that work most of the time).
+- **Acceptance criteria:**
+  - [ ] Decision recorded in DECISIONS.md with the trade-off
+  - [ ] Whatever gate is chosen is implemented + tested; `ruff`/`pytest` green
+
+### T-010: Collision-safe cache filenames
+- **Status:** ⬚ Open
+- **Priority:** P3
+- **Type:** Bug
+- **Description:** The full build wrote 19,301 ticker frames but only 19,285 distinct files — ~16 collisions from `_safe_name` mapping `/` → `_` (e.g. two symbols collapsing to the same stem). Use a collision-safe scheme so no ticker is silently overwritten.
+- **Acceptance criteria:**
+  - [ ] No two tickers map to the same cache file
+  - [ ] Test covering a colliding pair; `ruff`/`pytest` green
 
 ---
 

@@ -129,8 +129,10 @@ class FoldResult:
     start: dt.date
     end: dt.date
     n_trades: int
-    total_return: float  # net of costs, as a fraction (0.05 = +5%)
-    passing: bool        # profitable AND enough trades to count
+    total_return: float       # strategy return, net of costs (0.05 = +5%)
+    buy_hold_return: float    # holding the stock over the same window
+    excess_return: float      # total_return - buy_hold_return
+    passing: bool             # beat buy-and-hold AND enough trades to count
 
 
 @dataclass
@@ -144,6 +146,8 @@ class WFVResult:
     passed: bool = False
     total_trades: int = 0
     mean_fold_return: float = float("nan")
+    mean_buy_hold: float = float("nan")
+    mean_excess_return: float = float("nan")
 
     def to_row(self, ticker: str, classification: str) -> dict:
         """Flatten to a CSV/DataFrame row."""
@@ -155,6 +159,8 @@ class WFVResult:
             "n_folds": self.n_folds,
             "total_trades": self.total_trades,
             "mean_fold_return": self.mean_fold_return,
+            "mean_buy_hold": self.mean_buy_hold,
+            "mean_excess_return": self.mean_excess_return,
             "passed": self.passed,
         }
 
@@ -167,13 +173,15 @@ def _fold_bounds(n: int, n_folds: int) -> list[tuple[int, int]]:
 
 def _strategy_returns(
     df: pd.DataFrame, strategy: Strategy, cost: float
-) -> tuple[pd.Series, pd.Series]:
-    """Net daily returns and per-day entry flags for the whole history.
+) -> tuple[pd.Series, pd.Series, pd.Series]:
+    """Strategy net daily returns, entry flags, and the stock's daily returns.
 
     Positions are shifted one bar (act on the *next* day's open-to-open move, no
-    lookahead) and every change in exposure is charged ``cost``. Returns a
-    ``(net_return, entries)`` pair aligned to ``df.index``; ``entries`` marks
-    the bars where a new long position is opened (used to count trades).
+    lookahead) and every change in exposure is charged ``cost``. Returns
+    ``(net_return, entries, daily_ret)`` aligned to ``df.index``: ``net_return``
+    is the strategy's daily P&L net of cost, ``entries`` marks bars where a new
+    long is opened (trade count), and ``daily_ret`` is the underlying's daily
+    return — the buy-and-hold benchmark each fold must be beaten.
     """
     positions = strategy(df).reindex(df.index).fillna(0.0).clip(0.0, 1.0)
     exposure = positions.shift(1).fillna(0.0)          # act next bar
@@ -182,7 +190,7 @@ def _strategy_returns(
     turnover = exposure.diff().abs().fillna(exposure.abs())
     net_return = exposure * daily_ret - turnover * cost
     entries = exposure.diff().fillna(exposure) > 0      # 0 -> 1 transitions
-    return net_return, entries
+    return net_return, entries, daily_ret
 
 
 def walk_forward(
@@ -197,8 +205,12 @@ def walk_forward(
 ) -> WFVResult:
     """Run ``strategy`` across rolling folds of ``df`` and score it.
 
-    A fold *passes* when it is profitable (net of costs) **and** has at least
-    ``min_trades`` trades. The candidate passes when at least
+    A fold *passes* when the strategy is **both profitable and beats
+    buy-and-hold** over that fold (net of costs) **and** has at least
+    ``min_trades`` trades. Both conditions matter: positive-return alone is just
+    bull-market beta, while beating buy-and-hold alone can mean merely losing
+    less than a crashing stock. Requiring the intersection is what separates
+    tradeable edge from both traps. The candidate passes when at least
     ``min_folds_passing`` folds pass.
 
     Returns:
@@ -209,15 +221,21 @@ def walk_forward(
     if df.empty:
         return WFVResult(strategy=name)
 
-    net_return, entries = _strategy_returns(df, strategy, cost)
+    net_return, entries, daily_ret = _strategy_returns(df, strategy, cost)
     bounds = _fold_bounds(len(df), n_folds)
 
     folds: list[FoldResult] = []
     for k, (a, b) in enumerate(bounds, start=1):
-        seg = net_return.iloc[a:b]
         n_trades = int(entries.iloc[a:b].sum())
-        total_return = float((1.0 + seg).prod() - 1.0)
-        passing = total_return > 0 and n_trades >= min_trades
+        total_return = float((1.0 + net_return.iloc[a:b]).prod() - 1.0)
+        buy_hold = float((1.0 + daily_ret.iloc[a:b]).prod() - 1.0)
+        excess = total_return - buy_hold
+        # Pass requires BOTH: actually made money AND beat buy-and-hold. Excess
+        # alone isn't enough — a long-only strategy "beats" a stock that
+        # crashed just by sitting in cash (lost 2% vs the stock's 50%), which is
+        # not tradeable edge. Positive-return alone isn't enough either — that's
+        # just bull-market beta. The intersection is the honest bar.
+        passing = total_return > 0 and excess > 0 and n_trades >= min_trades
         folds.append(
             FoldResult(
                 fold=k,
@@ -225,14 +243,17 @@ def walk_forward(
                 end=df.index[b - 1].date(),
                 n_trades=n_trades,
                 total_return=total_return,
+                buy_hold_return=buy_hold,
+                excess_return=excess,
                 passing=passing,
             )
         )
 
     folds_passing = sum(f.passing for f in folds)
-    mean_fold_return = (
-        float(np.mean([f.total_return for f in folds])) if folds else float("nan")
-    )
+
+    def mean(vals: list[float]) -> float:
+        return float(np.mean(vals)) if folds else float("nan")
+
     return WFVResult(
         strategy=name,
         folds=folds,
@@ -240,8 +261,22 @@ def walk_forward(
         n_folds=len(folds),
         passed=folds_passing >= min_folds_passing,
         total_trades=sum(f.n_trades for f in folds),
-        mean_fold_return=mean_fold_return,
+        mean_fold_return=mean([f.total_return for f in folds]),
+        mean_buy_hold=mean([f.buy_hold_return for f in folds]),
+        mean_excess_return=mean([f.excess_return for f in folds]),
     )
+
+
+def cost_for_dollar_volume(avg_dollar_volume: float) -> float:
+    """Round-trip cost for a name, scaled to its liquidity (``config.WFV_COST_TIERS``).
+
+    Thinner names pay more because their real spread/slippage is wider — this is
+    the liquidity-aware alternative to charging every name the same flat fee.
+    """
+    for threshold, cost in config.WFV_COST_TIERS:
+        if avg_dollar_volume >= threshold:
+            return cost
+    return config.WFV_COST_TIERS[-1][1]
 
 
 def validate_candidate(df: pd.DataFrame, classification: str, **kwargs) -> WFVResult | None:
@@ -269,6 +304,8 @@ VALIDATION_COLUMNS = [
     "n_folds",
     "total_trades",
     "mean_fold_return",
+    "mean_buy_hold",
+    "mean_excess_return",
     "passed",
 ]
 
@@ -279,10 +316,12 @@ def validate_universe(
     start=None,
     end=None,
     min_avg_volume: float = config.MIN_AVG_VOLUME,
+    cache_dir=None,
 ) -> pd.DataFrame:
     """Characterize, then walk-forward-validate every ticker on the drive.
 
-    For each ticker: load daily bars, characterize it (to get its volume and
+    Reads from the daily cache when built (else scans the drive). For each
+    ticker: load daily bars, characterize it (to get its volume and
     classification), drop it if below ``min_avg_volume`` or too short to
     characterize, then validate it with the class-matched strategy. ``Random``
     names (no matched strategy) are skipped. Returns a frame with the passing
@@ -292,11 +331,12 @@ def validate_universe(
     # dependency on drive I/O.
     from pathlib import Path
 
+    from . import cache
     from .characterize import characterize
-    from .data import load_daily_bars
-    from .screen import available_date_range, discover_tickers
+    from .screen import available_date_range
 
     drive_path = config.DRIVE_PATH if drive_path is None else Path(drive_path)
+    using_cache = cache.cache_available(cache_dir)
 
     if start is None or end is None:
         span = available_date_range(drive_path)
@@ -307,16 +347,28 @@ def validate_universe(
         end = end or span[1]
 
     if tickers is None:
-        tickers = discover_tickers(drive_path)
-    logger.info("Validating %d tickers from %s to %s", len(tickers), start, end)
+        tickers = cache.universe_tickers(drive_path, cache_dir)
+    logger.info(
+        "Validating %d tickers from %s to %s (source: %s)",
+        len(tickers), start, end, "cache" if using_cache else "drive",
+    )
 
     rows: list[dict] = []
     for ticker in tickers:
-        df = load_daily_bars(ticker, start, end, drive_path=drive_path)
+        df = cache.load_daily(ticker, start, end, drive_path=drive_path, cache_dir=cache_dir)
         metrics = characterize(df)
-        if metrics is None or metrics["avg_volume"] < min_avg_volume:
+        if metrics is None:
             continue
-        result = validate_candidate(df, metrics["classification"])
+        # Gate on *dollar* volume (real liquidity) so the cost model is credible;
+        # the legacy share-volume floor is kept as a secondary guard.
+        if (
+            metrics["avg_dollar_volume"] < config.MIN_DOLLAR_VOLUME
+            or metrics["avg_volume"] < min_avg_volume
+        ):
+            continue
+        # Charge a liquidity-aware cost for this name rather than a flat fee.
+        cost = cost_for_dollar_volume(metrics["avg_dollar_volume"])
+        result = validate_candidate(df, metrics["classification"], cost=cost)
         if result is None:  # Random/Unknown — no strategy to test
             continue
         rows.append(result.to_row(ticker, metrics["classification"]))
@@ -325,7 +377,7 @@ def validate_universe(
     if frame.empty:
         return frame
     return frame.sort_values(
-        ["passed", "folds_passing", "mean_fold_return"], ascending=False
+        ["passed", "folds_passing", "mean_excess_return"], ascending=False
     ).reset_index(drop=True)
 
 

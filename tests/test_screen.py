@@ -59,17 +59,19 @@ def test_results_frame_empty():
     assert list(df.columns) == RESULT_COLUMNS
 
 
-def test_screen_universe_skips_short_history(sample_drive):
+def test_screen_universe_skips_short_history(sample_drive, tmp_path):
     """With the real 500-day minimum, the 2-day sample yields no candidates."""
-    df = screen_universe(sample_drive, min_avg_volume=0)
+    # cache_dir=tmp_path (empty) forces the sample-drive path, isolating the
+    # test from any real daily cache built on this machine.
+    df = screen_universe(sample_drive, min_avg_volume=0, cache_dir=tmp_path)
     assert df.empty
     assert list(df.columns) == RESULT_COLUMNS
 
 
-def test_screen_universe_builds_rows(sample_drive, monkeypatch):
+def test_screen_universe_builds_rows(sample_drive, tmp_path, monkeypatch):
     """Lowering the history floor lets the sample tickers through end-to-end."""
     monkeypatch.setattr(config, "MIN_HISTORY_DAYS", 1)
-    df = screen_universe(sample_drive, min_avg_volume=0)
+    df = screen_universe(sample_drive, min_avg_volume=0, cache_dir=tmp_path)
 
     assert set(df["ticker"]) == {"AAPL", "MSFT"}
     assert list(df.columns) == RESULT_COLUMNS

@@ -72,7 +72,7 @@ def test_normal_input_returns_all_metrics():
     result = characterize(df)
     assert result is not None
     assert set(result) == {
-        "hurst", "avg_atr_pct", "autocorr", "avg_volume",
+        "hurst", "avg_atr_pct", "autocorr", "avg_volume", "avg_dollar_volume",
         "max_drawdown", "history_days", "classification",
     }
     assert result["history_days"] == len(df)
@@ -81,6 +81,12 @@ def test_normal_input_returns_all_metrics():
 def test_avg_volume_is_the_mean():
     df = _ohlcv_from_close(_random_walk(600, seed=3), volume=750_000)
     assert characterize(df)["avg_volume"] == pytest.approx(750_000)
+
+
+def test_avg_dollar_volume_is_price_times_shares():
+    df = _ohlcv_from_close(_random_walk(600, seed=4), volume=1_000_000)
+    expected = float((df["close"] * df["volume"]).mean())
+    assert characterize(df)["avg_dollar_volume"] == pytest.approx(expected)
 
 
 # ── individual metrics ───────────────────────────────────────────────────────
